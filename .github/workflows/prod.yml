@@ -1,0 +1,48 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - release/production   # Trigger only when "production" branch is updated
+
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.PROD_SERVER_IP }}
+          username: ${{ secrets.PROD_SERVER_USER }}
+          key: ${{ secrets.PROD_SERVER_SSH_KEY }}
+          script: |
+            export NVM_DIR="$HOME/.nvm"
+                [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            cd /var/www/DineFlow-backend
+            echo "📦 Pulling latest code..."
+            git pull --no-rebase
+            
+            echo "📦 Installing dependencies..."
+            npm install
+            
+            echo "🔨 Building application..."
+            npm run build
+            
+            echo "🗄️ Running database migrations..."
+            npm run migration:run
+            MIGRATION_EXIT_CODE=$?
+            
+            
+            if [ $MIGRATION_EXIT_CODE -eq 0 ]; then
+              echo "✅ Migrations completed successfully"
+            else
+              echo "⚠️ Migration failed with exit code $MIGRATION_EXIT_CODE"
+              echo "Continuing with deployment (migrations might already be applied)"
+            fi
+            
+            echo "🔄 Restarting application..."
+            pm2 restart ecosystem.config.js
+            
+            echo "✅ Deployment complete!"

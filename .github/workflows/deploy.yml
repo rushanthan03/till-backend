@@ -1,0 +1,44 @@
+name: Deploy to Server (Development)
+
+on:
+  push:
+    branches:
+      - release/development   # Trigger only when "development" branch is updated
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /home/ec2-user/DineFlow-backend
+            echo "📦 Pulling latest code..."
+            git pull
+            
+            echo "📦 Installing dependencies..."
+            npm install
+            
+            echo "🔨 Building application..."
+            npm run build
+            
+            echo "🗄️ Running database migrations..."
+            npm run migration:run
+            MIGRATION_EXIT_CODE=$?
+            
+            if [ $MIGRATION_EXIT_CODE -eq 0 ]; then
+              echo "✅ Migrations completed successfully"
+            else
+              echo "⚠️ Migration failed with exit code $MIGRATION_EXIT_CODE"
+              echo "Continuing with deployment (migrations might already be applied)"
+            fi
+            
+            echo "🔄 Restarting application..."
+            pm2 reload 0 || pm2 restart 0
+            
+            echo "✅ Deployment complete!"

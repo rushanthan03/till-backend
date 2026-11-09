@@ -1,0 +1,51 @@
+name: Build and Push to Docker Hub
+
+on:
+  push:
+    branches: ["release/demo"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      - name: Build and Push API Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/dinesoon:backend
+            
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd restflow-backend/
+            echo "🧹 Cleaning old data..."
+            docker compose stop
+            docker compose rm
+            
+            echo "📦 Pulling latest image..."
+            docker compose pull
+            
+            echo "🔄 Restarting application..."
+            docker compose --env-file .env.docker up -d
+            
+            echo "✅ Deployment complete!"
