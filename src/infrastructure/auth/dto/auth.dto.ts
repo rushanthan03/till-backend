@@ -1,4 +1,4 @@
-import { IsEmail, IsString, IsOptional, IsEnum, IsPhoneNumber } from 'class-validator';
+import { IsEmail, IsString, IsOptional, IsEnum, IsPhoneNumber, Matches } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '../../database/entities';
 
@@ -10,6 +10,22 @@ export class LoginDto {
   @ApiProperty({ example: 'StrongPassw0rd!', description: 'Account password' })
   @IsString()
   password: string;
+}
+
+export class PinLoginDto {
+  @ApiProperty({ description: 'Company id this till belongs to (remembered after the first email sign-in)' })
+  @IsString()
+  tenantId: string;
+
+  @ApiProperty({ example: '1001', description: "The member of staff's employee number" })
+  @IsString()
+  @Matches(/^\d{3,8}$/, { message: 'Employee number must be 3 to 8 digits' })
+  employeeNumber: string;
+
+  @ApiProperty({ example: '1234', description: '4 to 6 digit PIN' })
+  @IsString()
+  @Matches(/^\d{4,6}$/, { message: 'PIN must be 4 to 6 digits' })
+  pin: string;
 }
 
 export class RegisterDto {

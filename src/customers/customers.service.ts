@@ -96,4 +96,37 @@ export class CustomersService {
     if (dto.isActive !== undefined) c.isActive = dto.isActive;
     return this.repo.save(c);
   }
+
+  /** Everything held about a customer, to hand over when they ask for their data (UK GDPR subject access). */
+  async exportData(id: string, storeId: string) {
+    const customer = await this.repo.findOne({ where: { id, tenantId: await this.tenantOf(storeId) } });
+    if (!customer) throw new NotFoundException('Customer not found');
+    const purchases = await this.sales.find({
+      where: { customerId: id },
+      select: ['receiptNumber', 'total', 'pointsEarned', 'status', 'createdAt'],
+      order: { createdAt: 'ASC' },
+    });
+    return {
+      exportedAt: new Date().toISOString(),
+      customer: {
+        name: customer.name, phone: customer.phone, email: customer.email, cardNumber: customer.cardNumber,
+        marketingConsent: customer.marketingConsent, pointsBalance: customer.pointsBalance, totalSpend: customer.totalSpend,
+        visitCount: customer.visitCount, lastVisitAt: customer.lastVisitAt, joinedAt: customer.createdAt,
+      },
+      purchases,
+    };
+  }
+
+  /**
+   * Right to erasure: removes the personal details and switches marketing off. Sales stay (the shop must keep
+   * its accounts) but no longer name the customer. This cannot be undone.
+   */
+  async erase(id: string, storeId: string) {
+    const c = await this.repo.findOne({ where: { id, tenantId: await this.tenantOf(storeId) } });
+    if (!c) throw new NotFoundException('Customer not found');
+    await this.sales.update({ customerId: id }, { customerName: null });
+    Object.assign(c, { name: 'Erased customer', phone: null, email: null, marketingConsent: false, isActive: false, pointsBalance: 0 });
+    await this.repo.save(c);
+    return { id, erased: true };
+  }
 }

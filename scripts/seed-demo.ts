@@ -69,15 +69,20 @@ async function main() {
   await addUser('admin@freshmarket.test', 'Fresh Market Admin', UserRole.TENANT_ADMIN, first[0].id);
 
   // Approval PINs (managers/admins) used for discounts and price overrides on the till.
-  const PINS: Record<string, string> = {
-    'manager.hs@freshmarket.test': '2580',
-    'manager.sr@freshmarket.test': '2580',
-    'admin@freshmarket.test': '1234',
+  // Employee number + PIN: how staff sign in at the till. Managers' PINs also approve discounts and paid-outs.
+  const STAFF: Record<string, { number: string; pin: string }> = {
+    'admin@freshmarket.test': { number: '9000', pin: '1234' },
+    'manager.hs@freshmarket.test': { number: '9001', pin: '2580' },
+    'manager.sr@freshmarket.test': { number: '9002', pin: '2580' },
+    'cashier1.hs@freshmarket.test': { number: '1001', pin: '1111' },
+    'cashier2.hs@freshmarket.test': { number: '1002', pin: '2222' },
+    'cashier1.sr@freshmarket.test': { number: '2001', pin: '3333' },
+    'cashier2.sr@freshmarket.test': { number: '2002', pin: '4444' },
   };
-  for (const [email, pin] of Object.entries(PINS)) {
-    await users.update({ email }, { pinHash: await bcrypt.hash(pin, 10) });
+  for (const [email, c] of Object.entries(STAFF)) {
+    await users.update({ email }, { employeeNumber: c.number, pinHash: await bcrypt.hash(c.pin, 10) });
   }
-  console.log('Approval PINs set: managers 2580, tenant admin 1234');
+  console.log('Till sign-in set: cashiers 1001/1111, 1002/2222, 2001/3333, 2002/4444; managers 9001, 9002 / 2580; admin 9000 / 1234');
 
   console.log('\nLogins created (password for all: ' + PASSWORD + ')');
   out.forEach((l) => console.log('  ' + l));

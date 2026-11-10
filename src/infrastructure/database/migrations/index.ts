@@ -33,6 +33,10 @@ import { AddStockMovements1794223200000 } from './1794223200000-AddStockMovement
 import { AddPromotionsAndCustomers1794223300000 } from './1794223300000-AddPromotionsAndCustomers';
 import { CustomersPerTenant1794223400000 } from './1794223400000-CustomersPerTenant';
 import { RenameRestaurantsToStores1794223500000 } from './1794223500000-RenameRestaurantsToStores';
+import { SaleClientRef1794223600000 } from './1794223600000-SaleClientRef';
+import { StaffPinAndAttendance1794223700000 } from './1794223700000-StaffPinAndAttendance';
+import { CardCharges1794223800000 } from './1794223800000-CardCharges';
+import { ReconcileEntitySchema1794223900000 } from './1794223900000-ReconcileEntitySchema';
 
 export const MIGRATIONS = [
   InitialSchema1660000000000,
@@ -70,6 +74,10 @@ export const MIGRATIONS = [
   AddPromotionsAndCustomers1794223300000,
   CustomersPerTenant1794223400000,
   RenameRestaurantsToStores1794223500000,
+  SaleClientRef1794223600000,
+  StaffPinAndAttendance1794223700000,
+  CardCharges1794223800000,
+  ReconcileEntitySchema1794223900000,
 ];
 
 

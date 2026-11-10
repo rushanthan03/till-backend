@@ -28,6 +28,8 @@ export enum UserStatus {
 @Index(['email'], { unique: true })
 @Index(['phoneNumber'])
 @Index(['tenantId'])
+// Number a member of staff types with their PIN at the till; unique within the company.
+@Index('UQ_users_employee_number', ['tenantId', 'employeeNumber'], { unique: true, where: `"employeeNumber" IS NOT NULL` })
 @Index(['restaurantId'])
 export class User {
   @PrimaryGeneratedColumn('uuid')
@@ -41,6 +43,9 @@ export class User {
 
   @Column()
   password: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  employeeNumber: string | null;
 
   /** Hashed 4-6 digit PIN a manager enters on the till to approve discounts and overrides. */
   @Column({ type: 'varchar', nullable: true, select: false })

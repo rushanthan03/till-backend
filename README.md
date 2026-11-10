@@ -74,6 +74,18 @@ Demo approval PINs (for discounts and price overrides on the till): managers `25
 | `npm run migration:run` | Apply database migrations (production) |
 | `npm run test:unit` | Unit tests (sales, refunds, shifts maths) |
 
+## Card payments
+Card payments go through a terminal provider (`src/payments`). The default `simulated` provider takes no money (amounts ending .13/.14 decline). A sale can only include a card payment that has an approved, unused terminal charge, and card refunds go back through the provider. To connect a real terminal, implement `TerminalProvider` and register it in `payments.service.ts`, then set `PAYMENT_PROVIDER`.
+
+## Production checklist
+- Set `NODE_ENV=production`. The app refuses to start with placeholder JWT secrets, a default database password or no `CORS_ORIGINS`.
+- `CORS_ORIGINS` = comma-separated web addresses allowed to call the API (the desktop till is always allowed). `TRUST_PROXY=true` behind a load balancer. Swagger is off unless `ENABLE_SWAGGER=true`.
+- Use migrations, not automatic sync: `npm run migration:run`. A database built only from the migration chain is tested and accepts the demo seed.
+- Health check for monitors: `GET /health`. Sign-in is rate-limited.
+- Backups: `scripts/backup.sh` (nightly cron; restore steps inside). Keep copies off the server.
+- Customer data requests: `GET /api/customers/:id/export` and `POST /api/customers/:id/erase` (managers).
+- Set `PAYMENT_PROVIDER` to a real provider before taking card payments.
+
 ## Roles
 `super_admin` (platform) · `tenant_admin` (company) · `manager` (refunds, reports, products) · `cashier` (till only).
 
@@ -85,5 +97,5 @@ Development uses automatic table sync. For production run migrations (`npm run m
 
 ## Notes
 - The database calls a shop a `store` (`stores` table, `storeId` columns). API paths (`/restaurants`, `/outlets`) and the `restaurantId` / `restaurant` fields in login responses keep their older names so existing clients keep working; they all mean "store".
-- Upgrading an older database: `npm run migration:run` applies `RenameRestaurantsToStores`, which renames the table and columns in place and keeps all data.
+- Upgrading an older database: `npm run migration:run` applies `RenameRestaurantsToStores` (and the reconcile migration that adds columns older migrations missed), which renames the table and columns in place and keeps all data.
 - Logo/banner uploads use AWS S3 and are optional.

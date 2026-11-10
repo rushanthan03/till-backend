@@ -1,6 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { APP_FILTER } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -27,6 +28,8 @@ import {
   Shift,
   CashMovement,
   StockMovement,
+  CardCharge,
+  TimeEntry,
   Promotion,
   Customer,
   Refund,
@@ -37,6 +40,8 @@ import { ProductModule } from './product/product.module';
 import { SalesModule } from './sales/sales.module';
 import { PromotionsModule } from './promotions/promotions.module';
 import { CustomersModule } from './customers/customers.module';
+import { PaymentsModule } from './payments/payments.module';
+import { AttendanceModule } from './attendance/attendance.module';
 import { ReportsModule } from './reports/reports.module';
 import { StockModule } from './stock/stock.module';
 import { ApprovalsModule } from './approvals/approvals.module';
@@ -64,6 +69,8 @@ import { MIGRATIONS } from './infrastructure/database/migrations';
         PORT: Joi.number().default(4000),
           }),
     }),
+    // Per client address: generous for a busy shop (many tills share one address), strict on sign-in (see AuthController).
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 1200 }]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (config: ConfigService) => ({
@@ -92,6 +99,8 @@ import { MIGRATIONS } from './infrastructure/database/migrations';
           Shift,
           CashMovement,
           StockMovement,
+          CardCharge,
+          TimeEntry,
           Promotion,
           Customer,
           Refund,
@@ -123,6 +132,8 @@ import { MIGRATIONS } from './infrastructure/database/migrations';
     ApprovalsModule,
     StockModule,
     ReportsModule,
+    AttendanceModule,
+    PaymentsModule,
     PromotionsModule,
     CustomersModule,
     ShiftsModule,
@@ -132,6 +143,7 @@ import { MIGRATIONS } from './infrastructure/database/migrations';
   providers: [
     AppService,
     TenantMiddleware,
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     {
       provide: APP_FILTER,
       useClass: ApplicationExceptionsFilter,

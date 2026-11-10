@@ -4,7 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../infrastructure/database/entities';
 import { ApprovalsService } from './approvals.service';
-import { ApprovalsController } from './approvals.controller';
+import { ApprovalsController, StaffCredentialsController } from './approvals.controller';
 
 @Module({
   imports: [
@@ -15,7 +15,7 @@ import { ApprovalsController } from './approvals.controller';
       inject: [ConfigService],
     }),
   ],
-  controllers: [ApprovalsController],
+  controllers: [ApprovalsController, StaffCredentialsController],
   providers: [ApprovalsService],
   exports: [ApprovalsService],
 })

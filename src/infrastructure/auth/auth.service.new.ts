@@ -5,7 +5,7 @@ import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { User, Restaurant, UserRole, UserStatus } from '../database/entities';
-import { LoginDto, RegisterDto, RefreshTokenDto } from './dto/auth.dto';
+import { LoginDto, PinLoginDto, RegisterDto, RefreshTokenDto } from './dto/auth.dto';
 import { AuthResponseDto, TokenResponseDto } from './dto/auth-response.dto';
 
 @Injectable()
@@ -59,6 +59,11 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    return this.finishLogin(user);
+  }
+
+  /** Everything after the credentials are known to be right: account checks, last-login stamp and tokens. */
+  private async finishLogin(user: any): Promise<AuthResponseDto> {
     if (user.status !== UserStatus.ACTIVE) {
       throw new UnauthorizedException('Account is not active');
     }
@@ -89,6 +94,41 @@ export class AuthService {
       user: this.sanitizeUser(user),
       ...tokens,
     };
+  }
+
+  /** Failed PIN attempts per employee (in memory: resets on restart, enough to stop someone guessing PINs at a till). */
+  private pinFailures = new Map<string, { count: number; lockedUntil: number }>();
+
+  /**
+   * Quick sign-in at the till: employee number + PIN instead of email + password.
+   * Five wrong tries lock that employee number for five minutes.
+   */
+  async pinLogin(dto: PinLoginDto): Promise<AuthResponseDto> {
+    const key = `${dto.tenantId}:${dto.employeeNumber}`;
+    const f = this.pinFailures.get(key);
+    if (f && f.lockedUntil > Date.now()) throw new UnauthorizedException('Too many wrong PIN attempts. Try again in a few minutes.');
+
+    const user = await this.userRepository
+      .createQueryBuilder('u')
+      .addSelect('u.pinHash')
+      .leftJoinAndSelect('u.tenant', 'tenant')
+      .leftJoinAndSelect('u.restaurant', 'restaurant')
+      .where('u.tenantId = :tenantId AND u.employeeNumber = :n', { tenantId: dto.tenantId, n: dto.employeeNumber })
+      .getOne();
+
+    // compare even when the employee does not exist, so response time does not reveal which numbers are in use
+    const ok = await bcrypt.compare(dto.pin, user?.pinHash ?? '$2b$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidi');
+    if (!user || !user.pinHash || !ok || user.role === UserRole.SUPER_ADMIN) {
+      const count = (f && f.lockedUntil <= Date.now() ? f.count : 0) + 1;
+      this.pinFailures.set(key, { count, lockedUntil: count >= 5 ? Date.now() + 5 * 60 * 1000 : 0 });
+      throw new UnauthorizedException('Invalid employee number or PIN');
+    }
+    this.pinFailures.delete(key);
+    if (!user.restaurant && user.tenantId) {
+      user.restaurant = await this.restaurantRepository.findOne({ where: { tenantId: user.tenantId }, order: { createdAt: 'ASC' } as any });
+    }
+    const { password: _pw, ...result } = user as any;
+    return this.finishLogin(result);
   }
 
   async register(registerDto: RegisterDto): Promise<AuthResponseDto> {
@@ -234,7 +274,7 @@ export class AuthService {
   }
 
   private sanitizeUser(user: User): any {
-    const { password, refreshToken, refreshTokenExpiresAt, ...sanitized } = user;
+    const { password, refreshToken, refreshTokenExpiresAt, pinHash, ...sanitized } = user as any;
     if (sanitized.restaurant) {
       sanitized.restaurant = {
         ...sanitized.restaurant,

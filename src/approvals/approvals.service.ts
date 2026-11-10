@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { Repository } from 'typeorm';
@@ -35,15 +35,41 @@ export class ApprovalsService {
   async setPin(userId: string, pin: string): Promise<{ message: string }> {
     const me = await this.users.findOne({ where: { id: userId } });
     if (!me || !APPROVER_ROLES.includes(me.role)) throw new ForbiddenException('Only managers and admins have an approval PIN');
-    // Two approvers sharing a PIN would make "who approved" ambiguous, so PINs are unique within a store.
-    const others = await this.approvers(me.restaurantId, me.tenantId);
-    for (const o of others) {
-      if (o.id !== me.id && (await bcrypt.compare(pin, o.pinHash!))) {
-        throw new BadRequestException('That PIN is already in use, choose another');
-      }
-    }
+    await this.assertPinFree(me, pin);
     await this.users.update(me.id, { pinHash: await bcrypt.hash(pin, 10) });
     return { message: 'PIN saved' };
+  }
+
+  /** Two approvers sharing a PIN would make "who approved" ambiguous, so approver PINs are unique within a store. */
+  private async assertPinFree(user: User, pin: string) {
+    if (!APPROVER_ROLES.includes(user.role)) return;
+    for (const o of await this.approvers(user.restaurantId, user.tenantId)) {
+      if (o.id !== user.id && (await bcrypt.compare(pin, o.pinHash!))) throw new BadRequestException('That PIN is already in use, choose another');
+    }
+  }
+
+  /**
+   * Gives a member of staff the employee number and PIN they use to sign in at the till.
+   * Managers can do it for cashiers of their own store; company admins for anyone in the company.
+   */
+  async setStaffCredentials(actor: { id: string; role: UserRole; tenantId?: string; restaurantId?: string }, userId: string, dto: { employeeNumber?: string; pin?: string }) {
+    const target = await this.users.createQueryBuilder('u').addSelect('u.pinHash').where('u.id = :userId', { userId }).getOne();
+    if (!target || target.role === UserRole.SUPER_ADMIN || (actor.tenantId && target.tenantId !== actor.tenantId)) throw new NotFoundException('Staff member not found');
+    if (actor.role === UserRole.MANAGER && (target.role !== UserRole.CASHIER || target.restaurantId !== actor.restaurantId)) {
+      throw new ForbiddenException('Managers can set PINs for cashiers in their own store');
+    }
+    if (dto.employeeNumber !== undefined) {
+      const clash = await this.users.findOne({ where: { tenantId: target.tenantId, employeeNumber: dto.employeeNumber } });
+      if (clash && clash.id !== target.id) throw new BadRequestException('That employee number is already in use');
+      target.employeeNumber = dto.employeeNumber;
+    }
+    if (dto.pin !== undefined) {
+      await this.assertPinFree(target, dto.pin);
+      target.pinHash = await bcrypt.hash(dto.pin, 10);
+    }
+    if (!target.employeeNumber && target.pinHash) throw new BadRequestException('Give this person an employee number too');
+    await this.users.save(target);
+    return { id: target.id, name: target.name, employeeNumber: target.employeeNumber, hasPin: !!target.pinHash };
   }
 
   async verifyPin(storeId: string, requester: { id: string; tenantId?: string }, pin: string) {

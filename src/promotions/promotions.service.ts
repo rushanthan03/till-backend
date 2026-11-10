@@ -13,8 +13,8 @@ export class PromotionsService {
   ) {}
 
   /** Offers running right now for a store. The sale uses this same query, so the till and the server agree. */
-  static currentFor(manager: EntityManager, storeId: string): Promise<Promotion[]> {
-    const now = new Date();
+  static currentFor(manager: EntityManager, storeId: string, at: Date = new Date()): Promise<Promotion[]> {
+    const now = at;
     return manager
       .createQueryBuilder(Promotion, 'p')
       .where('p.storeId = :storeId AND p.isActive = true', { storeId })

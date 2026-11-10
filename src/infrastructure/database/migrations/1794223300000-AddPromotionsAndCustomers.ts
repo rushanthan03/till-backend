@@ -27,6 +27,16 @@ export class AddPromotionsAndCustomers1794223300000 implements MigrationInterfac
     )`);
     await q.query(`CREATE INDEX IF NOT EXISTS "IDX_promotions_store_active" ON "promotions" ("restaurantId","isActive")`);
 
+    // Databases built from the old restaurant app already have a "customers" table (diner accounts). Set it
+    // aside as "legacy_customers" (data kept) so the loyalty table can take the name.
+    await q.query(`DO $$ BEGIN
+      IF to_regclass('public.customers') IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='customers' AND column_name='cardNumber')
+         AND to_regclass('public.legacy_customers') IS NULL THEN
+        ALTER TABLE "customers" RENAME TO "legacy_customers";
+        ALTER INDEX IF EXISTS "PK_customers" RENAME TO "PK_legacy_customers";
+      END IF;
+    END $$`);
     await q.query(`CREATE TABLE IF NOT EXISTS "customers" (
       "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
       "restaurantId" uuid NOT NULL,

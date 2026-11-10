@@ -1,5 +1,7 @@
 import { Customer } from '../infrastructure/database/entities/customer.entity';
 import { pointsForTotal } from '../customers/customers.service';
+import { randomBytes } from 'crypto';
+import { PaymentsService } from '../payments/payments.service';
 import { recordStockMovements, LedgerEntry } from '../stock/stock-ledger';
 import { StockMovementType } from '../infrastructure/database/entities/stock-movement.entity';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
@@ -18,6 +20,7 @@ export class RefundsService {
   constructor(
     private readonly dataSource: DataSource,
     @InjectRepository(Refund) private readonly refundRepository: Repository<Refund>,
+    private readonly cardPayments: PaymentsService,
   ) {}
 
   /**
@@ -104,6 +107,14 @@ export class RefundsService {
             .getRawOne();
           const refundSeq = Number(last?.max ?? 0) + 1;
 
+          // Card money goes back to the card that paid, through the terminal provider.
+          const originalCardRef = paid.find((p) => p.method === 'card' && p.reference)?.reference ?? null;
+          const refundRefs: (string | null)[] = [];
+          for (const p of payments) {
+            if (p.method === 'card' && originalCardRef) refundRefs.push(await this.cardPayments.refundToCard(originalCardRef, p.amount, `refund-${sale.id}-${randomBytes(4).toString('hex')}`));
+            else refundRefs.push(p.reference ?? null);
+          }
+
           const refund = manager.create(Refund, {
             storeId,
             refundSeq,
@@ -129,7 +140,7 @@ export class RefundsService {
                 disposition: dispositionById.get(item.id)!,
               });
             }),
-            payments: payments.map((p) => manager.create(RefundPayment, { method: p.method as any, amount: p.amount, reference: p.reference ?? null })),
+            payments: payments.map((p, i) => manager.create(RefundPayment, { method: p.method as any, amount: p.amount, reference: refundRefs[i] })),
           });
           const savedRefund = await manager.save(Refund, refund);
           await recordStockMovements(manager, restocked.map((e) => ({ ...e, reference: savedRefund.refundNumber })));

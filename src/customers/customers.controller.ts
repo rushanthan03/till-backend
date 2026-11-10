@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../infrastructure/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../infrastructure/auth/guards/roles.guard';
@@ -46,5 +46,22 @@ export class CustomersController {
   @ApiQuery({ name: 'storeId', required: false })
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateCustomerDto, @Query('storeId') storeId: string, @CurrentUser() user: any) {
     return this.customers.update(id, resolveStoreId(storeId, user), dto);
+  }
+
+  @Get(':id/export')
+  @Roles(...MANAGERS)
+  @ApiOperation({ summary: 'Download everything held about a customer (data subject access request)' })
+  @ApiQuery({ name: 'storeId', required: false })
+  export(@Param('id', ParseUUIDPipe) id: string, @Query('storeId') storeId: string, @CurrentUser() user: any) {
+    return this.customers.exportData(id, resolveStoreId(storeId, user));
+  }
+
+  @Post(':id/erase')
+  @HttpCode(200)
+  @Roles(...MANAGERS)
+  @ApiOperation({ summary: "Erase a customer's personal data (right to erasure). Cannot be undone." })
+  @ApiQuery({ name: 'storeId', required: false })
+  erase(@Param('id', ParseUUIDPipe) id: string, @Query('storeId') storeId: string, @CurrentUser() user: any) {
+    return this.customers.erase(id, resolveStoreId(storeId, user));
   }
 }

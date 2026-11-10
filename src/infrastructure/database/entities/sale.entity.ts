@@ -33,6 +33,8 @@ export enum SalePaymentMethod {
 @Entity('sales')
 @Index(['storeId', 'receiptSeq'], { unique: true })
 @Index(['storeId', 'createdAt'])
+// A till that was offline resends the same sale until the server confirms it; this makes that safe (no double sale).
+@Index('UQ_sales_client_ref', ['storeId', 'clientRef'], { unique: true, where: `"clientRef" IS NOT NULL` })
 export class Sale {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -87,6 +89,10 @@ export class Sale {
   /** Total value taken off by discounts and price overrides (VAT included). */
   @Column({ type: 'decimal', precision: 12, scale: 2, default: 0, transformer: decimalTransformer })
   discountTotal: number;
+
+  /** Id the till generated for the sale. Sent with every attempt, so a resend returns the same sale instead of a second one. */
+  @Column({ type: 'varchar', nullable: true })
+  clientRef: string | null;
 
   /** Loyalty customer attached to the sale, and the points the sale earned. */
   @Column({ type: 'uuid', nullable: true })

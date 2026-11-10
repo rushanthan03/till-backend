@@ -6,6 +6,7 @@ import { Product } from '../infrastructure/database/entities/product.entity';
 import { Shift, ShiftStatus } from '../infrastructure/database/entities/shift.entity';
 import { Sale, SaleItem, SalePayment, SalePaymentMethod, SaleStatus } from '../infrastructure/database/entities/sale.entity';
 import { CreateSaleDto, ListSalesQueryDto } from './dto/sale.dto';
+import { PaymentsService } from '../payments/payments.service';
 import { ApprovalsService, APPROVER_ROLES } from '../approvals/approvals.service';
 import { UserRole } from '../infrastructure/database/entities';
 import { recordStockMovements, LedgerEntry } from '../stock/stock-ledger';
@@ -23,6 +24,7 @@ export class SalesService {
     private readonly dataSource: DataSource,
     @InjectRepository(Sale) private readonly saleRepository: Repository<Sale>,
     private readonly approvals: ApprovalsService,
+    private readonly payments: PaymentsService,
   ) {}
 
   /**
@@ -59,6 +61,20 @@ export class SalesService {
       }
     }
 
+    // Sales rung up while the till was offline arrive later with the time they were made.
+    let soldAt: Date | null = null;
+    if (dto.soldAt) {
+      soldAt = new Date(dto.soldAt);
+      const now = Date.now();
+      if (Number.isNaN(soldAt.getTime()) || soldAt.getTime() > now + 5 * 60 * 1000) throw new BadRequestException('soldAt cannot be in the future');
+      if (soldAt.getTime() < now - 7 * 24 * 60 * 60 * 1000) throw new BadRequestException('Offline sales older than 7 days cannot be synced; ask a manager');
+    }
+    // A resend of a sale the server already saved returns that sale, so retries can never double-sell.
+    const existing = async () =>
+      dto.clientRef ? this.saleRepository.findOne({ where: { storeId, clientRef: dto.clientRef }, relations: ['items', 'payments'] }) : null;
+    const already = await existing();
+    if (already) return already;
+
     const MAX_ATTEMPTS = 3;
     for (let attempt = 1; ; attempt++) {
       try {
@@ -80,7 +96,7 @@ export class SalesService {
           let discountTotal = 0;
           let manualDiscount = 0;
           // Offers running now. Lines changed by hand (manager discount/override) are not also discounted by an offer.
-          const offers = await PromotionsService.currentFor(manager, storeId);
+          const offers = await PromotionsService.currentFor(manager, storeId, soldAt ?? new Date());
           const ledger: LedgerEntry[] = [];
           for (const { productId, quantity, discountPercent, priceOverride, reason } of lines) {
             const product = byId.get(productId);
@@ -148,6 +164,9 @@ export class SalesService {
             await manager.save(Customer, customer);
           }
 
+          // Card payments must match an approved, unused charge from the card terminal.
+          const claimed = await this.payments.claimForSale(manager, storeId, null, applied.filter((p) => p.method === 'card'));
+
           await manager.save(Product, products);
 
           const last = await manager
@@ -172,6 +191,8 @@ export class SalesService {
             discountTotal,
             approvedById: manualDiscount > 0 ? approver?.approverId ?? null : null,
             approvedByName: manualDiscount > 0 ? approver?.approverName ?? null : null,
+            clientRef: dto.clientRef ?? null,
+            ...(soldAt ? { createdAt: soldAt } : {}),
             customerId: customer?.id ?? null,
             customerName: customer?.name ?? null,
             pointsEarned: customer ? pointsForTotal(totals.total) : 0,
@@ -188,11 +209,16 @@ export class SalesService {
             ),
           });
           const saved = await manager.save(Sale, sale);
+          await this.payments.markUsed(manager, claimed, saved.id);
           await recordStockMovements(manager, ledger.map((e) => ({ ...e, reference: saved.receiptNumber })));
           return saved;
         });
       } catch (error: any) {
         // Two tills finishing at the same moment can pick the same receipt number; retry picks the next one.
+        if (error?.code === '23505' && String(error?.constraint ?? error?.detail ?? '').includes('clientRef')) {
+          const again = await existing(); // two copies of the same offline sale raced: keep the one that won
+          if (again) return again;
+        }
         const isReceiptClash = error?.code === '23505' && String(error?.detail ?? '').includes('receiptSeq');
         if (isReceiptClash && attempt < MAX_ATTEMPTS) continue;
         throw error;

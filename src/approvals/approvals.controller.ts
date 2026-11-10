@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, HttpCode, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../infrastructure/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../infrastructure/auth/guards/roles.guard';
@@ -7,7 +7,7 @@ import { CurrentUser } from '../infrastructure/auth/decorators/current-user.deco
 import { resolveStoreId } from '../infrastructure/auth/store-scope';
 import { UserRole } from '../infrastructure/database/entities';
 import { ApprovalsService, APPROVER_ROLES } from './approvals.service';
-import { SetPinDto, VerifyPinDto } from './dto/approval.dto';
+import { SetPinDto, StaffCredentialsDto, VerifyPinDto } from './dto/approval.dto';
 
 @ApiTags('Approvals')
 @Controller('approvals')
@@ -30,5 +30,20 @@ export class ApprovalsController {
   @ApiOperation({ summary: 'Set or change your own approval PIN (managers and admins)' })
   setPin(@Body() dto: SetPinDto, @CurrentUser() user: any) {
     return this.approvals.setPin(user.id, dto.pin);
+  }
+}
+
+@ApiTags('Staff sign-in')
+@Controller('staff')
+@UseGuards(JwtAuthGuard, RolesGuard)
+export class StaffCredentialsController {
+  constructor(private readonly approvals: ApprovalsService) {}
+
+  @Post(':userId/till-login')
+  @HttpCode(200)
+  @Roles(...APPROVER_ROLES)
+  @ApiOperation({ summary: "Set a member of staff's employee number and till PIN (managers: own store's cashiers)" })
+  set(@Param('userId', ParseUUIDPipe) userId: string, @Body() dto: StaffCredentialsDto, @CurrentUser() user: any) {
+    return this.approvals.setStaffCredentials({ id: user.id, role: user.role, tenantId: user.tenantId, restaurantId: user.restaurantId }, userId, dto);
   }
 }

@@ -84,6 +84,12 @@ export class CreateSaleDto {
   @IsBoolean()
   ageVerified?: boolean;
 
+  @ApiPropertyOptional({ description: 'Unique id made by the till for this sale; resending it returns the same sale (safe retries, offline sync)' })
+  @IsOptional() @IsString() @MaxLength(64) clientRef?: string;
+
+  @ApiPropertyOptional({ description: 'When the sale was made, for sales rung up offline (up to 7 days back, never in the future)' })
+  @IsOptional() @IsDateString() soldAt?: string;
+
   @ApiPropertyOptional({ description: 'Loyalty customer to credit with points', format: 'uuid' })
   @IsOptional() @IsUUID() customerId?: string;
 
