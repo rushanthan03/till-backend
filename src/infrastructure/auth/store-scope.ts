@@ -2,23 +2,23 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { UserRole } from '../database/entities';
 
 /**
- * Resolves which store (restaurantId) a request may act on:
+ * Resolves which store (storeId) a request may act on:
  *  - super admin must name the store
  *  - tenant admin uses their assigned store, or the one named
  *  - everyone else is locked to their own store
  */
-export function resolveStoreId(restaurantId: string | undefined, user: any): string {
+export function resolveStoreId(storeId: string | undefined, user: any): string {
   if (user.role === UserRole.SUPER_ADMIN) {
-    if (!restaurantId) throw new BadRequestException('restaurantId is required for super admin');
-    return restaurantId;
+    if (!storeId) throw new BadRequestException('storeId is required for super admin');
+    return storeId;
   }
   if (user.role === UserRole.TENANT_ADMIN) {
-    const id = user.restaurantId || restaurantId;
-    if (!id) throw new BadRequestException('restaurantId is required');
+    const id = user.restaurantId || storeId;
+    if (!id) throw new BadRequestException('storeId is required');
     return id;
   }
   if (!user.restaurantId) throw new ForbiddenException('User is not assigned to a store');
-  if (restaurantId && restaurantId !== user.restaurantId) {
+  if (storeId && storeId !== user.restaurantId) {
     throw new ForbiddenException('You can only access data for your own store');
   }
   return user.restaurantId;

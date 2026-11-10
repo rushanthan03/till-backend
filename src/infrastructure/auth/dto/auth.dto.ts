@@ -3,7 +3,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '../../database/entities';
 
 export class LoginDto {
-  @ApiProperty({ example: 'admin@dineflow.com', description: 'Registered email address' })
+  @ApiProperty({ example: 'admin@till.local', description: 'Registered email address' })
   @IsEmail()
   email: string;
 
@@ -61,7 +61,7 @@ export class ChangePasswordDto {
 }
 
 export class ForgotPasswordDto {
-  @ApiProperty({ example: 'user@dineflow.com', description: 'Email address to send the password reset link' })
+  @ApiProperty({ example: 'user@till.local', description: 'Email address to send the password reset link' })
   @IsEmail()
   email: string;
 }

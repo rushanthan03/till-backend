@@ -20,15 +20,15 @@ export class RefundsService {
    * Refunds part or all of a sale. Everything happens in one transaction with the sale row
    * locked, so two tills can never refund the same item twice.
    */
-  async create(restaurantId: string, user: { id?: string; name?: string }, dto: CreateRefundDto): Promise<Refund> {
+  async create(storeId: string, user: { id?: string; name?: string }, dto: CreateRefundDto): Promise<Refund> {
     const MAX_ATTEMPTS = 3;
     for (let attempt = 1; ; attempt++) {
       try {
         return await this.dataSource.transaction(async (manager) => {
-          const shift = await manager.findOne(Shift, { where: { restaurantId, userId: user.id, status: ShiftStatus.OPEN } });
+          const shift = await manager.findOne(Shift, { where: { storeId, userId: user.id, status: ShiftStatus.OPEN } });
           if (!shift) throw new ConflictException('Open the till before processing a refund');
 
-          const sale = await manager.findOne(Sale, { where: { id: dto.saleId, restaurantId }, lock: { mode: 'pessimistic_write' } });
+          const sale = await manager.findOne(Sale, { where: { id: dto.saleId, storeId }, lock: { mode: 'pessimistic_write' } });
           if (!sale) throw new NotFoundException('Sale not found');
           if (sale.status === SaleStatus.VOIDED) throw new BadRequestException('A voided sale cannot be refunded');
 
@@ -69,7 +69,7 @@ export class RefundsService {
           await manager.save(SaleItem, items);
 
           if (restockQty.size) {
-            const products = await manager.find(Product, { where: { id: In([...restockQty.keys()]), restaurantId }, lock: { mode: 'pessimistic_write' } });
+            const products = await manager.find(Product, { where: { id: In([...restockQty.keys()]), storeId }, lock: { mode: 'pessimistic_write' } });
             products.forEach((p) => (p.stockQuantity = round3(p.stockQuantity + (restockQty.get(p.id) ?? 0))));
             await manager.save(Product, products);
           }
@@ -81,12 +81,12 @@ export class RefundsService {
           const last = await manager
             .createQueryBuilder(Refund, 'r')
             .select('COALESCE(MAX(r.refundSeq), 0)', 'max')
-            .where('r.restaurantId = :restaurantId', { restaurantId })
+            .where('r.storeId = :storeId', { storeId })
             .getRawOne();
           const refundSeq = Number(last?.max ?? 0) + 1;
 
           const refund = manager.create(Refund, {
-            restaurantId,
+            storeId,
             refundSeq,
             refundNumber: formatRefundNumber(refundSeq),
             saleId: sale.id,
@@ -122,9 +122,9 @@ export class RefundsService {
     }
   }
 
-  async findAll(restaurantId: string, page = 1, limit = 25) {
+  async findAll(storeId: string, page = 1, limit = 25) {
     const [data, total] = await this.refundRepository.findAndCount({
-      where: { restaurantId },
+      where: { storeId },
       relations: ['payments'],
       order: { createdAt: 'DESC' },
       skip: (page - 1) * limit,
@@ -133,8 +133,8 @@ export class RefundsService {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  async findOne(id: string, restaurantId: string): Promise<Refund> {
-    const refund = await this.refundRepository.findOne({ where: { id, restaurantId }, relations: ['items', 'payments'] });
+  async findOne(id: string, storeId: string): Promise<Refund> {
+    const refund = await this.refundRepository.findOne({ where: { id, storeId }, relations: ['items', 'payments'] });
     if (!refund) throw new NotFoundException('Refund not found');
     return refund;
   }

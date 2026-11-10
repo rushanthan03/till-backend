@@ -20,7 +20,7 @@ export class SalesService {
    * the product records, never trusted from the client. Everything runs in one
    * transaction: the sale, its lines and payments, and the stock deduction.
    */
-  async create(restaurantId: string, user: { id?: string; name?: string }, dto: CreateSaleDto): Promise<Sale> {
+  async create(storeId: string, user: { id?: string; name?: string }, dto: CreateSaleDto): Promise<Sale> {
     // Merge duplicate product lines so each product is checked and deducted once.
     const quantities = new Map<string, number>();
     for (const item of dto.items) {
@@ -32,11 +32,11 @@ export class SalesService {
       try {
         return await this.dataSource.transaction(async (manager) => {
           // Sales belong to a till session: the cashier must have opened the till first.
-          const shift = await manager.findOne(Shift, { where: { restaurantId, userId: user.id, status: ShiftStatus.OPEN } });
+          const shift = await manager.findOne(Shift, { where: { storeId, userId: user.id, status: ShiftStatus.OPEN } });
           if (!shift) throw new ConflictException('Open the till before selling');
 
           const products = await manager.find(Product, {
-            where: { id: In([...quantities.keys()]), restaurantId },
+            where: { id: In([...quantities.keys()]), storeId },
             lock: { mode: 'pessimistic_write' },
           });
           const byId = new Map(products.map((p) => [p.id, p]));
@@ -85,12 +85,12 @@ export class SalesService {
           const last = await manager
             .createQueryBuilder(Sale, 's')
             .select('COALESCE(MAX(s.receiptSeq), 0)', 'max')
-            .where('s.restaurantId = :restaurantId', { restaurantId })
+            .where('s.storeId = :storeId', { storeId })
             .getRawOne();
           const receiptSeq = Number(last?.max ?? 0) + 1;
 
           const sale = manager.create(Sale, {
-            restaurantId,
+            storeId,
             receiptSeq,
             receiptNumber: formatReceiptNumber(receiptSeq),
             cashierId: user.id ?? null,
@@ -124,13 +124,13 @@ export class SalesService {
     }
   }
 
-  async findAll(restaurantId: string, query: ListSalesQueryDto) {
+  async findAll(storeId: string, query: ListSalesQueryDto) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 25;
     const qb = this.saleRepository
       .createQueryBuilder('s')
       .leftJoinAndSelect('s.payments', 'payments')
-      .where('s.restaurantId = :restaurantId', { restaurantId });
+      .where('s.storeId = :storeId', { storeId });
     if (query.receiptNumber?.trim()) qb.andWhere('s.receiptNumber ILIKE :rn', { rn: `%${query.receiptNumber.trim()}%` });
     if (query.shiftId) qb.andWhere('s.shiftId = :shiftId', { shiftId: query.shiftId });
     if (query.cashier?.trim()) qb.andWhere('s.cashierName ILIKE :cashier', { cashier: `%${query.cashier.trim()}%` });
@@ -150,11 +150,11 @@ export class SalesService {
   }
 
   /** A sale with its lines, payments and every refund made against it. */
-  async findOne(id: string, restaurantId: string): Promise<Sale & { refunds: Refund[] }> {
-    const sale = await this.saleRepository.findOne({ where: { id, restaurantId }, relations: ['items', 'payments'] });
+  async findOne(id: string, storeId: string): Promise<Sale & { refunds: Refund[] }> {
+    const sale = await this.saleRepository.findOne({ where: { id, storeId }, relations: ['items', 'payments'] });
     if (!sale) throw new NotFoundException('Sale not found');
     const refunds = await this.dataSource.getRepository(Refund).find({
-      where: { saleId: sale.id, restaurantId },
+      where: { saleId: sale.id, storeId },
       relations: ['items', 'payments'],
       order: { createdAt: 'ASC' },
     });
@@ -166,18 +166,18 @@ export class SalesService {
    * gross = everything sold, net = gross minus refunds. Voided sales are left out;
    * sales that were later refunded still count in gross (the refund is shown separately).
    */
-  async summary(restaurantId: string, from?: string, to?: string, shiftId?: string) {
+  async summary(storeId: string, from?: string, to?: string, shiftId?: string) {
     const start = from ? new Date(from) : new Date(new Date().setHours(0, 0, 0, 0));
     const end = to ? new Date(to) : new Date();
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) throw new BadRequestException('from/to must be valid dates');
-    const params = { restaurantId, voided: SaleStatus.VOIDED, start, end, shiftId };
+    const params = { storeId, voided: SaleStatus.VOIDED, start, end, shiftId };
     // With a shift id the figures describe exactly that till session (the period is then ignored).
     const salesWhere = shiftId
-      ? 's.restaurantId = :restaurantId AND s.status != :voided AND s.shiftId = :shiftId'
-      : 's.restaurantId = :restaurantId AND s.status != :voided AND s.createdAt BETWEEN :start AND :end';
+      ? 's.storeId = :storeId AND s.status != :voided AND s.shiftId = :shiftId'
+      : 's.storeId = :storeId AND s.status != :voided AND s.createdAt BETWEEN :start AND :end';
     const refundWhere = shiftId
-      ? 'r.restaurantId = :restaurantId AND r.shiftId = :shiftId'
-      : 'r.restaurantId = :restaurantId AND r.createdAt BETWEEN :start AND :end';
+      ? 'r.storeId = :storeId AND r.shiftId = :shiftId'
+      : 'r.storeId = :storeId AND r.createdAt BETWEEN :start AND :end';
 
     const sales = await this.dataSource.createQueryBuilder().select('COUNT(*)', 'count')
       .addSelect('COALESCE(SUM(s.total), 0)', 'gross').addSelect('COALESCE(SUM(s.vatTotal), 0)', 'vat')

@@ -65,7 +65,7 @@ export class CreateSaleDto {
 }
 
 export class ListSalesQueryDto {
-  @IsOptional() @IsString() restaurantId?: string;
+  @IsOptional() @IsString() storeId?: string;
   @IsOptional() @IsString() receiptNumber?: string;
   @IsOptional() @IsUUID() shiftId?: string;
   @IsOptional() @IsString() cashier?: string;

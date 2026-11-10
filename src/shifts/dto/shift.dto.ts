@@ -34,7 +34,7 @@ export class CloseShiftDto extends CountCashDto {
 }
 
 export class ListShiftsQueryDto {
-  @IsOptional() @IsString() restaurantId?: string;
+  @IsOptional() @IsString() storeId?: string;
   @IsOptional() @IsEnum(ShiftStatus) status?: ShiftStatus;
   @IsOptional() @IsString() cashier?: string;
   @IsOptional() @IsDateString() from?: string;

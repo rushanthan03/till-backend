@@ -24,15 +24,15 @@ export enum RefundDisposition {
 }
 
 @Entity('refunds')
-@Index(['restaurantId', 'refundSeq'], { unique: true })
+@Index(['storeId', 'refundSeq'], { unique: true })
 @Index(['saleId'])
 @Index(['shiftId'])
 export class Refund {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid' })
-  restaurantId: string;
+  @Column({ type: 'uuid', name: 'restaurantId' })
+  storeId: string;
 
   @ManyToOne(() => Restaurant, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'restaurantId' })

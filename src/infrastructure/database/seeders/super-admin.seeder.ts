@@ -21,7 +21,7 @@ export class SuperAdminSeeder {
 
     // Create super admin
     const superAdmin = userRepository.create({
-      email: (process.env.SUPER_ADMIN_EMAIL || 'admin@dineflow.com').toLowerCase(),
+      email: (process.env.SUPER_ADMIN_EMAIL || 'admin@till.local').toLowerCase(),
       password: await bcrypt.hash(
         process.env.SUPER_ADMIN_PASSWORD || 'SuperAdmin@123',
         10

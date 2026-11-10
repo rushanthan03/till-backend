@@ -44,8 +44,8 @@ async function bootstrap() {
   });
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('DineFlow Till API')
-    .setDescription('API documentation for the DineFlow Till backend services (products, sales, refunds, till sessions)')
+    .setTitle('Supermarket Till API')
+    .setDescription('API documentation for the Supermarket Till backend services (products, sales, refunds, till sessions)')
     .setVersion('1.0')
     .addBearerAuth()
     .build();

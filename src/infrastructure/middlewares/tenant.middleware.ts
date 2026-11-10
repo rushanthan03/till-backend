@@ -382,6 +382,9 @@ export class TenantMiddleware implements NestMiddleware {
 
     // Try to get restaurantId from query params
     if (req.query && typeof req.query === 'object') {
+      if (req.query.storeId) {
+        return req.query.storeId as string;
+      }
       if (req.query.restaurantId) {
         return req.query.restaurantId as string;
       }

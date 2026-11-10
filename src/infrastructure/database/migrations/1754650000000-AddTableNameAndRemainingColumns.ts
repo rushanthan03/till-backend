@@ -184,7 +184,7 @@ export class AddTableNameAndRemainingColumns1754650000000 implements MigrationIn
     `);
 
     // ── 9. Ensure Super Admin exists with credentials ─────────────────────
-    const adminEmail = (process.env.SUPER_ADMIN_EMAIL || 'admin@dineflow.com').toLowerCase();
+    const adminEmail = (process.env.SUPER_ADMIN_EMAIL || 'admin@till.local').toLowerCase();
     const adminPassword = process.env.SUPER_ADMIN_PASSWORD || 'SuperAdmin@123';
     const hashedPassword = await bcrypt.hash(adminPassword, 10);
 

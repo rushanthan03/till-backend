@@ -5,7 +5,7 @@ export class ResetSuperAdminPassword1754700000000 implements MigrationInterface 
   name = 'ResetSuperAdminPassword1754700000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    const adminEmail = (process.env.SUPER_ADMIN_EMAIL || 'admin@dineflow.com').toLowerCase();
+    const adminEmail = (process.env.SUPER_ADMIN_EMAIL || 'admin@till.local').toLowerCase();
     const adminPassword = process.env.SUPER_ADMIN_PASSWORD || 'SuperAdmin@123';
     const hashedPassword = await bcrypt.hash(adminPassword, 10);
 

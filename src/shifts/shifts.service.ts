@@ -28,18 +28,18 @@ export class ShiftsService {
     @InjectRepository(Shift) private readonly shiftRepository: Repository<Shift>,
   ) {}
 
-  findOpen(restaurantId: string, userId: string): Promise<Shift | null> {
-    return this.shiftRepository.findOne({ where: { restaurantId, userId, status: ShiftStatus.OPEN } });
+  findOpen(storeId: string, userId: string): Promise<Shift | null> {
+    return this.shiftRepository.findOne({ where: { storeId, userId, status: ShiftStatus.OPEN } });
   }
 
-  async open(restaurantId: string, user: { id: string; name: string }, dto: OpenShiftDto): Promise<Shift> {
-    if (await this.findOpen(restaurantId, user.id)) {
+  async open(storeId: string, user: { id: string; name: string }, dto: OpenShiftDto): Promise<Shift> {
+    if (await this.findOpen(storeId, user.id)) {
       throw new ConflictException('You already have an open till session');
     }
     try {
       return await this.shiftRepository.save(
         this.shiftRepository.create({
-          restaurantId,
+          storeId,
           userId: user.id,
           cashierName: user.name,
           openingFloat: dto.openingFloat,
@@ -54,8 +54,8 @@ export class ShiftsService {
     }
   }
 
-  async requireOpen(restaurantId: string, userId: string): Promise<Shift> {
-    const shift = await this.findOpen(restaurantId, userId);
+  async requireOpen(storeId: string, userId: string): Promise<Shift> {
+    const shift = await this.findOpen(storeId, userId);
     if (!shift) throw new NotFoundException('No open till session. Open the till first.');
     return shift;
   }
@@ -136,10 +136,10 @@ export class ShiftsService {
     return { countedCash, expectedCash: expected, variance, requiresNote: varianceNeedsNote(variance) };
   }
 
-  async close(restaurantId: string, userId: string, dto: CloseShiftDto): Promise<Shift> {
+  async close(storeId: string, userId: string, dto: CloseShiftDto): Promise<Shift> {
     return this.dataSource.transaction(async (manager) => {
       const shift = await manager.findOne(Shift, {
-        where: { restaurantId, userId, status: ShiftStatus.OPEN },
+        where: { storeId, userId, status: ShiftStatus.OPEN },
         lock: { mode: 'pessimistic_write' },
       });
       if (!shift) throw new NotFoundException('No open till session to close');
@@ -173,8 +173,8 @@ export class ShiftsService {
   }
 
   /** Shared by the list and the summary so the tiles always match the table. */
-  private filtered(qb: SelectQueryBuilder<Shift>, restaurantId: string, q: ListShiftsQueryDto) {
-    qb.where('s.restaurantId = :restaurantId', { restaurantId });
+  private filtered(qb: SelectQueryBuilder<Shift>, storeId: string, q: ListShiftsQueryDto) {
+    qb.where('s.storeId = :storeId', { storeId });
     if (q.status) qb.andWhere('s.status = :status', { status: q.status });
     if (q.cashier?.trim()) qb.andWhere('s.cashierName ILIKE :cashier', { cashier: `%${q.cashier.trim()}%` });
     if (q.from) qb.andWhere('s.openedAt >= :from', { from: new Date(q.from) });
@@ -183,10 +183,10 @@ export class ShiftsService {
     return qb;
   }
 
-  async list(restaurantId: string, q: ListShiftsQueryDto) {
+  async list(storeId: string, q: ListShiftsQueryDto) {
     const page = q.page ?? 1;
     const limit = q.limit ?? 25;
-    const [data, total] = await this.filtered(this.shiftRepository.createQueryBuilder('s'), restaurantId, q)
+    const [data, total] = await this.filtered(this.shiftRepository.createQueryBuilder('s'), storeId, q)
       .orderBy('s.openedAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit)
@@ -195,8 +195,8 @@ export class ShiftsService {
   }
 
   /** Headline numbers for the filtered sessions. Money figures use closed sessions only (open ones are still moving). */
-  async summary(restaurantId: string, q: ListShiftsQueryDto) {
-    const row = await this.filtered(this.shiftRepository.createQueryBuilder('s'), restaurantId, q)
+  async summary(storeId: string, q: ListShiftsQueryDto) {
+    const row = await this.filtered(this.shiftRepository.createQueryBuilder('s'), storeId, q)
       .select('COUNT(*)', 'sessions')
       .addSelect("COUNT(*) FILTER (WHERE s.status = 'open')", 'open')
       .addSelect("COUNT(*) FILTER (WHERE s.status = 'closed')", 'closed')
@@ -226,8 +226,8 @@ export class ShiftsService {
    * One session with its figures: live for an open session, the saved Z report for a closed one
    * (closed figures never change, even if sales are later edited).
    */
-  async detail(id: string, restaurantId: string) {
-    const shift = await this.findOne(id, restaurantId);
+  async detail(id: string, storeId: string) {
+    const shift = await this.findOne(id, storeId);
     if (shift.status === ShiftStatus.OPEN) return this.xReport(shift);
     const gross = shift.grossSales ?? 0;
     const refunds = shift.refundsTotal ?? 0;
@@ -248,8 +248,8 @@ export class ShiftsService {
     };
   }
 
-  async findOne(id: string, restaurantId: string): Promise<Shift> {
-    const shift = await this.shiftRepository.findOne({ where: { id, restaurantId } });
+  async findOne(id: string, storeId: string): Promise<Shift> {
+    const shift = await this.shiftRepository.findOne({ where: { id, storeId } });
     if (!shift) throw new NotFoundException('Till session not found');
     return shift;
   }

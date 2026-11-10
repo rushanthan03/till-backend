@@ -16,15 +16,15 @@ export enum ShiftStatus {
  * shift closes, so a closed shift never changes afterwards.
  */
 @Entity('shifts')
-@Index(['restaurantId', 'openedAt'])
+@Index(['storeId', 'openedAt'])
 // A cashier can only have one open shift per store at a time.
-@Index('UQ_shifts_one_open_per_user', ['restaurantId', 'userId'], { unique: true, where: `"status" = 'open'` })
+@Index('UQ_shifts_one_open_per_user', ['storeId', 'userId'], { unique: true, where: `"status" = 'open'` })
 export class Shift {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid' })
-  restaurantId: string;
+  @Column({ type: 'uuid', name: 'restaurantId' })
+  storeId: string;
 
   @ManyToOne(() => Restaurant, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'restaurantId' })

@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-console.log('🚀 Setting up DineFlow Till Backend...\n');
+console.log('🚀 Setting up Supermarket Till Backend...\n');
 
 // Check if .env file exists
 const envPath = path.join(process.cwd(), '.env');
@@ -41,9 +41,9 @@ console.log('\n🎉 Setup completed successfully!');
 console.log('\n📋 Next steps:');
 console.log('1. Update your .env file with your database credentials');
 console.log('2. Make sure PostgreSQL is running');
-console.log('3. Create a database named "dineflow_saas"');
+console.log('3. Create a database named "till_pos"');
 console.log('4. Run: npm run start:dev');
 console.log('\n🔗 The application will be available at: http://localhost:4000/api');
 console.log('\n👤 Default Super Admin credentials:');
-console.log('   Email: admin@dineflow.com');
+console.log('   Email: admin@till.local');
 console.log('   Password: SuperAdmin@123');

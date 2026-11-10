@@ -23,7 +23,7 @@ export class S3Service {
     private readonly endpoint: string;
 
     constructor(private configService: ConfigService) {
-        this.bucketName = this.configService.get<string>('OBJECT_BUCKET') || 'dinesoon';
+        this.bucketName = this.configService.get<string>('OBJECT_BUCKET') || 'till-uploads';
         this.region = this.configService.get<string>('OBJECT_REGION') || 'us-east-1';
         this.endpoint = this.configService.get<string>('OBJECT_ENDPOINT') || 'https://nyc3.digitaloceanspaces.com';
 
@@ -154,9 +154,9 @@ export class S3Service {
         return `https://${this.bucketName}.${this.region}.digitaloceanspaces.com/${key}`;
 
         /* 
-        NOTE: If you want to use 'https://object.dinesoon.com/key', 
+        NOTE: If you want to use 'https://object.example.com/key', 
         you MUST go to DO Dashboard -> Spaces -> Settings -> Custom Domains 
-        and add 'object.dinesoon.com'. 
+        and add 'object.example.com'. 
         Otherwise, DO will return 'NoSuchBucket'.
         */
     }

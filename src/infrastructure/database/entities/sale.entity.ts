@@ -29,16 +29,16 @@ export enum SalePaymentMethod {
   CARD = 'card',
 }
 
-/** A completed till sale (one receipt). `restaurantId` is the store. */
+/** A completed till sale (one receipt). `storeId` is the store. */
 @Entity('sales')
-@Index(['restaurantId', 'receiptSeq'], { unique: true })
-@Index(['restaurantId', 'createdAt'])
+@Index(['storeId', 'receiptSeq'], { unique: true })
+@Index(['storeId', 'createdAt'])
 export class Sale {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid' })
-  restaurantId: string;
+  @Column({ type: 'uuid', name: 'restaurantId' })
+  storeId: string;
 
   @ManyToOne(() => Restaurant, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'restaurantId' })

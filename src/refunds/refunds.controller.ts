@@ -21,22 +21,22 @@ export class RefundsController {
   @Post()
   @Roles(...REFUND_ROLES)
   @ApiOperation({ summary: 'Refund items from a sale (money out of the open till session)' })
-  @ApiQuery({ name: 'restaurantId', required: false })
-  create(@Body() dto: CreateRefundDto, @Query('restaurantId') restaurantId: string, @CurrentUser() user: any) {
-    return this.refunds.create(resolveStoreId(restaurantId, user), { id: user.id, name: user.name }, dto);
+  @ApiQuery({ name: 'storeId', required: false })
+  create(@Body() dto: CreateRefundDto, @Query('storeId') storeId: string, @CurrentUser() user: any) {
+    return this.refunds.create(resolveStoreId(storeId, user), { id: user.id, name: user.name }, dto);
   }
 
   @Get()
   @Roles(...REFUND_ROLES)
-  @ApiQuery({ name: 'restaurantId', required: false })
-  list(@Query('restaurantId') restaurantId: string, @Query('page') page: string, @Query('limit') limit: string, @CurrentUser() user: any) {
-    return this.refunds.findAll(resolveStoreId(restaurantId, user), Number(page) || 1, Math.min(Number(limit) || 25, 200));
+  @ApiQuery({ name: 'storeId', required: false })
+  list(@Query('storeId') storeId: string, @Query('page') page: string, @Query('limit') limit: string, @CurrentUser() user: any) {
+    return this.refunds.findAll(resolveStoreId(storeId, user), Number(page) || 1, Math.min(Number(limit) || 25, 200));
   }
 
   @Get(':id')
   @Roles(...REFUND_ROLES)
-  @ApiQuery({ name: 'restaurantId', required: false })
-  get(@Param('id', ParseUUIDPipe) id: string, @Query('restaurantId') restaurantId: string, @CurrentUser() user: any) {
-    return this.refunds.findOne(id, resolveStoreId(restaurantId, user));
+  @ApiQuery({ name: 'storeId', required: false })
+  get(@Param('id', ParseUUIDPipe) id: string, @Query('storeId') storeId: string, @CurrentUser() user: any) {
+    return this.refunds.findOne(id, resolveStoreId(storeId, user));
   }
 }

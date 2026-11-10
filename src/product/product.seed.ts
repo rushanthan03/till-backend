@@ -139,9 +139,9 @@ export const DEMO_PRODUCTS: SeedProduct[] = [
   { name: 'White Wine 75cl', department: 'Alcohol', category: 'Wine', brand: 'Valle', price: 7.0, cost: 4.6, vat: 20, age: 18, stock: 20, reorder: 6 },
 ];
 
-export function buildSeedRows(restaurantId: string) {
+export function buildSeedRows(storeId: string) {
   return DEMO_PRODUCTS.map((p, i) => ({
-    restaurantId,
+    storeId,
     name: p.name,
     // 50-prefixed EAN-13 with a valid check digit (demo barcodes)
     barcode: ean13('50000000' + String(i + 1).padStart(4, '0')),

@@ -1,4 +1,4 @@
-# DineFlow Till – Backend
+# Supermarket Till – Backend
 
 NestJS + PostgreSQL API for a supermarket till (EPOS): products and barcodes, VAT-inclusive pricing, sales with split payments, refunds, till sessions (X/Z reports, blind cash-up) and multi-tenant store management.
 
@@ -31,7 +31,7 @@ NestJS + PostgreSQL API for a supermarket till (EPOS): products and barcodes, VA
    ```bash
    npx ts-node -r tsconfig-paths/register -e "import {AppDataSource} from './src/infrastructure/database/data-source'; import {SuperAdminSeeder} from './src/infrastructure/database/seeders/super-admin.seeder'; AppDataSource.initialize().then(async d=>{await new SuperAdminSeeder(d).run(); await d.destroy();})"
    ```
-   Login: `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` from `.env` (defaults `admin@dineflow.com` / `SuperAdmin@123`).
+   Login: `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` from `.env` (defaults `admin@till.local` / `SuperAdmin@123`).
 
 5. **Load demo data (optional)** – one tenant, two stores, 100 products per store, manager and cashier users:
    ```bash

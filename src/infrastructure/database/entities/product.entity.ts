@@ -23,20 +23,20 @@ export enum ProductUnitType {
 }
 
 /**
- * A sellable supermarket product. `restaurantId` is the store (outlet) the
+ * A sellable supermarket product. `storeId` is the store (outlet) the
  * product belongs to - the column name is kept for compatibility with the
  * existing tenant/outlet model.
  */
 @Entity('products')
-@Index(['restaurantId'])
-@Index(['restaurantId', 'barcode'], { unique: true })
-@Index(['restaurantId', 'department'])
+@Index(['storeId'])
+@Index(['storeId', 'barcode'], { unique: true })
+@Index(['storeId', 'department'])
 export class Product {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid' })
-  restaurantId: string;
+  @Column({ type: 'uuid', name: 'restaurantId' })
+  storeId: string;
 
   @ManyToOne(() => Restaurant, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'restaurantId' })

@@ -96,7 +96,7 @@ export class CreateProductDto {
 export class UpdateProductDto extends PartialType(CreateProductDto) {}
 
 export class ListProductsQueryDto {
-  @IsOptional() @IsString() restaurantId?: string;
+  @IsOptional() @IsString() storeId?: string;
   @IsOptional() @IsString() search?: string;
   @IsOptional() @IsString() department?: string;
   @IsOptional() @IsString() status?: 'active' | 'inactive' | 'all';

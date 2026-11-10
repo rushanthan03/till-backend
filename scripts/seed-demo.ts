@@ -57,7 +57,7 @@ async function main() {
     }
     first.push(store);
 
-    const have = new Set((await products.find({ where: { restaurantId: store.id }, select: ['barcode'] })).map((p) => p.barcode));
+    const have = new Set((await products.find({ where: { storeId: store.id }, select: ['barcode'] })).map((p) => p.barcode));
     const rows = buildSeedRows(store.id).filter((r) => !have.has(r.barcode));
     if (rows.length) await products.save(rows.map((r) => ({ ...r } as any)));
     console.log(`  ${s.name}: ${rows.length} products added`);

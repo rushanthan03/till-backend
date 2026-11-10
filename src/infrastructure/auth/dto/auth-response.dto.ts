@@ -4,7 +4,7 @@ import { UserRole, UserStatus } from '../../database/entities';
 export class UserResponseDto {
   @ApiProperty({ format: 'uuid' })
   id: string;
-  @ApiProperty({ example: 'user@dineflow.com' })
+  @ApiProperty({ example: 'user@till.local' })
   email: string;
   @ApiProperty({ example: '+15555550123', required: false })
   phoneNumber?: string;

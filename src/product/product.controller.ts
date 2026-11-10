@@ -33,66 +33,66 @@ export class ProductController {
   @Roles(...READ_ROLES)
   @ApiOperation({ summary: 'List/search products for a store' })
   list(@Query() query: ListProductsQueryDto, @CurrentUser() user: any) {
-    return this.productService.findAll(resolveStoreId(query.restaurantId, user), query);
+    return this.productService.findAll(resolveStoreId(query.storeId, user), query);
   }
 
   @Get('departments')
   @Roles(...READ_ROLES)
   @ApiOperation({ summary: 'Departments with product counts' })
-  @ApiQuery({ name: 'restaurantId', required: false })
-  departments(@Query('restaurantId') restaurantId: string, @CurrentUser() user: any) {
-    return this.productService.listDepartments(resolveStoreId(restaurantId, user));
+  @ApiQuery({ name: 'storeId', required: false })
+  departments(@Query('storeId') storeId: string, @CurrentUser() user: any) {
+    return this.productService.listDepartments(resolveStoreId(storeId, user));
   }
 
   @Get('barcode/:barcode')
   @Roles(...READ_ROLES)
   @ApiOperation({ summary: 'Till lookup by barcode or SKU' })
-  @ApiQuery({ name: 'restaurantId', required: false })
-  byBarcode(@Param('barcode') barcode: string, @Query('restaurantId') restaurantId: string, @CurrentUser() user: any) {
-    return this.productService.findByBarcode(barcode, resolveStoreId(restaurantId, user));
+  @ApiQuery({ name: 'storeId', required: false })
+  byBarcode(@Param('barcode') barcode: string, @Query('storeId') storeId: string, @CurrentUser() user: any) {
+    return this.productService.findByBarcode(barcode, resolveStoreId(storeId, user));
   }
 
   @Post('seed-demo')
   @Roles(...WRITE_ROLES)
   @ApiOperation({ summary: 'Load the demo supermarket catalogue into a store' })
-  @ApiQuery({ name: 'restaurantId', required: false })
-  seed(@Query('restaurantId') restaurantId: string, @CurrentUser() user: any) {
-    return this.productService.seedDemoProducts(resolveStoreId(restaurantId, user));
+  @ApiQuery({ name: 'storeId', required: false })
+  seed(@Query('storeId') storeId: string, @CurrentUser() user: any) {
+    return this.productService.seedDemoProducts(resolveStoreId(storeId, user));
   }
 
   @Get(':id')
   @Roles(...READ_ROLES)
-  @ApiQuery({ name: 'restaurantId', required: false })
-  get(@Param('id', ParseUUIDPipe) id: string, @Query('restaurantId') restaurantId: string, @CurrentUser() user: any) {
-    return this.productService.findOne(id, resolveStoreId(restaurantId, user));
+  @ApiQuery({ name: 'storeId', required: false })
+  get(@Param('id', ParseUUIDPipe) id: string, @Query('storeId') storeId: string, @CurrentUser() user: any) {
+    return this.productService.findOne(id, resolveStoreId(storeId, user));
   }
 
   @Post()
   @Roles(...WRITE_ROLES)
   @ApiOperation({ summary: 'Create a product' })
-  @ApiQuery({ name: 'restaurantId', required: false })
-  create(@Body() dto: CreateProductDto, @Query('restaurantId') restaurantId: string, @CurrentUser() user: any) {
-    return this.productService.create(resolveStoreId(restaurantId, user), dto);
+  @ApiQuery({ name: 'storeId', required: false })
+  create(@Body() dto: CreateProductDto, @Query('storeId') storeId: string, @CurrentUser() user: any) {
+    return this.productService.create(resolveStoreId(storeId, user), dto);
   }
 
   @Patch(':id')
   @Roles(...WRITE_ROLES)
   @ApiOperation({ summary: 'Update a product' })
-  @ApiQuery({ name: 'restaurantId', required: false })
+  @ApiQuery({ name: 'storeId', required: false })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateProductDto,
-    @Query('restaurantId') restaurantId: string,
+    @Query('storeId') storeId: string,
     @CurrentUser() user: any,
   ) {
-    return this.productService.update(id, resolveStoreId(restaurantId, user), dto);
+    return this.productService.update(id, resolveStoreId(storeId, user), dto);
   }
 
   @Delete(':id')
   @Roles(...WRITE_ROLES)
   @ApiOperation({ summary: 'Archive (deactivate) a product' })
-  @ApiQuery({ name: 'restaurantId', required: false })
-  archive(@Param('id', ParseUUIDPipe) id: string, @Query('restaurantId') restaurantId: string, @CurrentUser() user: any) {
-    return this.productService.archive(id, resolveStoreId(restaurantId, user));
+  @ApiQuery({ name: 'storeId', required: false })
+  archive(@Param('id', ParseUUIDPipe) id: string, @Query('storeId') storeId: string, @CurrentUser() user: any) {
+    return this.productService.archive(id, resolveStoreId(storeId, user));
   }
 }
