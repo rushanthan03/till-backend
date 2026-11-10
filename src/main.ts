@@ -5,14 +5,16 @@ import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { createDataSource, runSeeders } from './infrastructure/database/database.config';
 import helmet from 'helmet';
+import { config as loadEnv } from 'dotenv';
 import { checkProductionConfig, isOriginAllowed } from './infrastructure/config/production-checks';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  const configService = app.get(ConfigService);
-  const production = configService.get<string>('NODE_ENV') === 'production';
+  // Read the same env files the app uses (the first file wins), so the safety check below sees the real settings.
+  loadEnv({ path: ['.env', '.env.local', '.env.production'], quiet: true });
+  const production = process.env.NODE_ENV === 'production';
 
   // Refuse to start a live server with placeholder secrets or a wide-open configuration.
+  // This runs before anything connects to the database, so a bad config is reported straight away.
   if (production) {
     const { errors, warnings } = checkProductionConfig(process.env);
     warnings.forEach((w) => console.warn(`[config] ${w}`));
@@ -21,6 +23,9 @@ async function bootstrap() {
       throw new Error('Unsafe production configuration. Fix the problems above and start again.');
     }
   }
+
+  const app = await NestFactory.create(AppModule);
+  const configService = app.get(ConfigService);
 
   // Behind a load balancer or proxy, trust it so rate limits see each client's real address.
   if (configService.get<string>('TRUST_PROXY')) (app as any).set('trust proxy', configService.get<string>('TRUST_PROXY') === 'true' ? 1 : configService.get<string>('TRUST_PROXY'));

@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { databaseSsl } from './infrastructure/config/database-ssl';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -112,7 +113,7 @@ import { MIGRATIONS } from './infrastructure/database/migrations';
         // migrationsRun: true,
         //logging: configService.get<string>('NODE_ENV') === 'development',
         logging: false,
-        ssl: configService.get<string>('NODE_ENV') === 'production' ? { rejectUnauthorized: false } : false,
+        ssl: databaseSsl({ NODE_ENV: configService.get<string>('NODE_ENV'), DATABASE_SSL: configService.get<string>('DATABASE_SSL') }),
       }),
       inject: [ConfigService],
     }),

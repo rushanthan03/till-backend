@@ -1,3 +1,4 @@
+import { databaseSsl } from '../config/database-ssl';
 import { DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { SuperAdminSeeder } from './seeders/super-admin.seeder';
@@ -20,7 +21,7 @@ export const createDataSource = (configService: ConfigService): DataSource => {
     migrations: MIGRATIONS,
     synchronize: configService.get<string>('NODE_ENV') === 'development',
     logging: configService.get<string>('NODE_ENV') === 'development',
-    ssl: configService.get<string>('NODE_ENV') === 'production' ? { rejectUnauthorized: false } : false,
+    ssl: databaseSsl({ NODE_ENV: configService.get<string>('NODE_ENV'), DATABASE_SSL: configService.get<string>('DATABASE_SSL') }),
   });
 };
 

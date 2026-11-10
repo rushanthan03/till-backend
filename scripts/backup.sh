@@ -8,6 +8,10 @@
 # Keep copies OFF the server too (another machine or a cloud bucket): a backup on the same disk is not a backup.
 set -euo pipefail
 
+# Use the app's own .env when present, so cron and deploys need no extra setup.
+if [ -f .env ]; then set -a; . ./.env; set +a; fi
+export PGPASSWORD="${PGPASSWORD:-${DATABASE_PASSWORD:-}}"
+
 HOST="${DATABASE_HOST:-localhost}"
 PORT="${DATABASE_PORT:-5432}"
 USER="${DATABASE_USERNAME:-postgres}"

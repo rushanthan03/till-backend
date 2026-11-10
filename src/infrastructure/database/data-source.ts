@@ -1,3 +1,4 @@
+import { databaseSsl } from '../config/database-ssl';
 import { DataSource } from 'typeorm';
 import * as dotenv from 'dotenv';
 import {
@@ -20,5 +21,5 @@ export const AppDataSource = new DataSource({
         Tenant, User, Restaurant, Product, Sale, SaleItem, SalePayment, Shift, CashMovement, StockMovement, CardCharge, TimeEntry, Promotion, Customer, Refund, RefundItem, RefundPayment,
     ],
     migrations: MIGRATIONS,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    ssl: databaseSsl({ NODE_ENV: process.env.NODE_ENV, DATABASE_SSL: process.env.DATABASE_SSL }),
 });
