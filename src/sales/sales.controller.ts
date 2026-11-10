@@ -24,7 +24,7 @@ export class SalesController {
   @ApiOperation({ summary: 'Complete a till sale (prices, VAT and stock are calculated server-side)' })
   @ApiQuery({ name: 'storeId', required: false })
   create(@Body() dto: CreateSaleDto, @Query('storeId') storeId: string, @CurrentUser() user: any) {
-    return this.salesService.create(resolveStoreId(storeId, user), { id: user.id, name: user.name }, dto);
+    return this.salesService.create(resolveStoreId(storeId, user), { id: user.id, name: user.name, role: user.role }, dto);
   }
 
   @Get()

@@ -84,6 +84,17 @@ export class Sale {
   @Column({ type: 'int' })
   itemCount: number;
 
+  /** Total value taken off by discounts and price overrides (VAT included). */
+  @Column({ type: 'decimal', precision: 12, scale: 2, default: 0, transformer: decimalTransformer })
+  discountTotal: number;
+
+  /** Manager who approved the discounts/overrides on this sale. */
+  @Column({ type: 'uuid', nullable: true })
+  approvedById: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  approvedByName: string | null;
+
   /** True when the cashier confirmed the customer's age for restricted items. */
   @Column({ type: 'boolean', default: false })
   ageVerified: boolean;
@@ -142,6 +153,13 @@ export class SaleItem {
 
   @Column({ type: 'int', default: 0 })
   ageRestriction: number;
+
+  /** Shelf price before a discount or override (null when the line was sold at shelf price). */
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true, transformer: decimalTransformer })
+  originalUnitPrice: number | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  adjustmentReason: string | null;
 
   /** How much of this line has been refunded so far (quantity, value and VAT). */
   @Column({ type: 'decimal', precision: 12, scale: 3, default: 0, transformer: decimalTransformer })

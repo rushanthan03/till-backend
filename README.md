@@ -45,6 +45,8 @@ NestJS + PostgreSQL API for a supermarket till (EPOS): products and barcodes, VA
    | Manager | manager.hs@freshmarket.test, manager.sr@freshmarket.test |
    | Cashier | cashier1.hs@, cashier2.hs@, cashier1.sr@, cashier2.sr@ freshmarket.test |
 
+Demo approval PINs (for discounts and price overrides on the till): managers `2580`, tenant admin `1234`. Managers set their own under Settings in the app.
+
 ## Environment variables
 
 | Variable | Purpose |
@@ -69,7 +71,7 @@ NestJS + PostgreSQL API for a supermarket till (EPOS): products and barcodes, VA
 `super_admin` (platform) · `tenant_admin` (company) · `manager` (refunds, reports, products) · `cashier` (till only).
 
 ## Main endpoints
-`/api/auth/login` · `/api/tenants` · `/api/tenants/:id/outlets` (stores) · `/api/tenants/:id/users` · `/api/products` · `/api/sales` · `/api/refunds` · `/api/shifts`
+`/api/auth/login` · `/api/tenants` · `/api/tenants/:id/outlets` (stores) · `/api/tenants/:id/users` · `/api/products` · `/api/sales` · `/api/refunds` · `/api/shifts` · `/api/approvals/verify` (manager PIN → 5-minute token for discounts/overrides)
 
 ## Production database
 Development uses automatic table sync. For production run migrations (`npm run migration:run`, PostgreSQL 12+). Do **not** apply the output of `npm run migration:generate` as-is: older migrations and entities have drifted, so a generated diff contains unrelated statements, including `DROP COLUMN`. Write migrations by hand or keep only the statements for the tables you changed.

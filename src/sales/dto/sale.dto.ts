@@ -1,5 +1,5 @@
 import { IsDateString } from 'class-validator';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, ValidateNested } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { SalePaymentMethod, SaleStatus } from '../../infrastructure/database/entities/sale.entity';
@@ -15,6 +15,27 @@ export class SaleItemInputDto {
   @Min(0.001)
   @Max(100000)
   quantity: number;
+
+  @ApiPropertyOptional({ description: 'Percentage taken off the shelf price (needs manager approval)', example: 10 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(100)
+  discountPercent?: number;
+
+  @ApiPropertyOptional({ description: 'Replacement unit price, VAT included (needs manager approval)', example: 0.99 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  priceOverride?: number;
+
+  @ApiPropertyOptional({ description: 'Why the price was changed (required with a discount or override)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  reason?: string;
 }
 
 export class SalePaymentInputDto {
@@ -62,6 +83,11 @@ export class CreateSaleDto {
   @IsOptional()
   @IsBoolean()
   ageVerified?: boolean;
+
+  @ApiPropertyOptional({ description: 'Token from POST /approvals/verify; required when a cashier applies a discount or price override' })
+  @IsOptional()
+  @IsString()
+  approvalToken?: string;
 }
 
 export class ListSalesQueryDto {

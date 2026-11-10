@@ -27,6 +27,7 @@ import { FixAllMissingColumnsComprehensive1754900000000 } from './1754900000000-
 import { AddPartialPaymentAndPayLaterLedger1755000000000 } from './1755000000000-AddPartialPaymentAndPayLaterLedger';
 import { CreatePosTables1794222900000 } from './1794222900000-CreatePosTables';
 import { AddCashierUserRole1794222950000 } from './1794222950000-AddCashierUserRole';
+import { AddApprovalsAndDiscounts1794223000000 } from './1794223000000-AddApprovalsAndDiscounts';
 
 export const MIGRATIONS = [
   InitialSchema1660000000000,
@@ -58,6 +59,7 @@ export const MIGRATIONS = [
   AddPartialPaymentAndPayLaterLedger1755000000000,
   CreatePosTables1794222900000,
   AddCashierUserRole1794222950000,
+  AddApprovalsAndDiscounts1794223000000,
 ];
 
 

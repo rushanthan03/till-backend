@@ -68,6 +68,17 @@ async function main() {
   }
   await addUser('admin@freshmarket.test', 'Fresh Market Admin', UserRole.TENANT_ADMIN, first[0].id);
 
+  // Approval PINs (managers/admins) used for discounts and price overrides on the till.
+  const PINS: Record<string, string> = {
+    'manager.hs@freshmarket.test': '2580',
+    'manager.sr@freshmarket.test': '2580',
+    'admin@freshmarket.test': '1234',
+  };
+  for (const [email, pin] of Object.entries(PINS)) {
+    await users.update({ email }, { pinHash: await bcrypt.hash(pin, 10) });
+  }
+  console.log('Approval PINs set: managers 2580, tenant admin 1234');
+
   console.log('\nLogins created (password for all: ' + PASSWORD + ')');
   out.forEach((l) => console.log('  ' + l));
   await ds.destroy();

@@ -42,6 +42,10 @@ export class User {
   @Column()
   password: string;
 
+  /** Hashed 4-6 digit PIN a manager enters on the till to approve discounts and overrides. */
+  @Column({ type: 'varchar', nullable: true, select: false })
+  pinHash: string | null;
+
   @Column()
   name: string;
 

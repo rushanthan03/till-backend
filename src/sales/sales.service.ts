@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { Refund, RefundPayment } from '../infrastructure/database/entities/refund.entity';
@@ -6,6 +6,8 @@ import { Product } from '../infrastructure/database/entities/product.entity';
 import { Shift, ShiftStatus } from '../infrastructure/database/entities/shift.entity';
 import { Sale, SaleItem, SalePayment, SalePaymentMethod, SaleStatus } from '../infrastructure/database/entities/sale.entity';
 import { CreateSaleDto, ListSalesQueryDto } from './dto/sale.dto';
+import { ApprovalsService, APPROVER_ROLES } from '../approvals/approvals.service';
+import { UserRole } from '../infrastructure/database/entities';
 import { applyPayments, calcLine, formatReceiptNumber, round2, round3, sumLines } from './sale-calculations';
 
 @Injectable()
@@ -13,6 +15,7 @@ export class SalesService {
   constructor(
     private readonly dataSource: DataSource,
     @InjectRepository(Sale) private readonly saleRepository: Repository<Sale>,
+    private readonly approvals: ApprovalsService,
   ) {}
 
   /**
@@ -20,11 +23,33 @@ export class SalesService {
    * the product records, never trusted from the client. Everything runs in one
    * transaction: the sale, its lines and payments, and the stock deduction.
    */
-  async create(storeId: string, user: { id?: string; name?: string }, dto: CreateSaleDto): Promise<Sale> {
-    // Merge duplicate product lines so each product is checked and deducted once.
-    const quantities = new Map<string, number>();
+  async create(storeId: string, user: { id?: string; name?: string; role?: UserRole }, dto: CreateSaleDto): Promise<Sale> {
+    // Plain lines for the same product are merged so each is checked and deducted once.
+    // Lines with a discount or override stay separate: each keeps its own price.
+    const plain = new Map<string, number>();
+    const lines: { productId: string; quantity: number; discountPercent?: number; priceOverride?: number; reason?: string }[] = [];
     for (const item of dto.items) {
-      quantities.set(item.productId, round3((quantities.get(item.productId) ?? 0) + item.quantity));
+      const adjusted = item.discountPercent !== undefined || item.priceOverride !== undefined;
+      if (item.discountPercent !== undefined && item.priceOverride !== undefined) {
+        throw new BadRequestException('Use either a discount or a price override on a line, not both');
+      }
+      if (adjusted && !item.reason?.trim()) throw new BadRequestException('A reason is required for a discount or price override');
+      if (adjusted) lines.push({ ...item });
+      else plain.set(item.productId, round3((plain.get(item.productId) ?? 0) + item.quantity));
+    }
+    for (const [productId, quantity] of plain) lines.push({ productId, quantity });
+    const productIds = [...new Set(lines.map((l) => l.productId))];
+
+    // Cashiers need a manager's approval for any price change; managers and admins may do it themselves.
+    const hasAdjustment = lines.some((l) => l.discountPercent !== undefined || l.priceOverride !== undefined);
+    let approver: { approverId: string; approverName: string } | null = null;
+    if (hasAdjustment) {
+      if (user.role && APPROVER_ROLES.includes(user.role)) {
+        approver = { approverId: user.id!, approverName: user.name ?? '' };
+      } else {
+        if (!dto.approvalToken) throw new ForbiddenException('Manager approval is required for discounts and price overrides');
+        approver = await this.approvals.verifyToken(dto.approvalToken, storeId);
+      }
     }
 
     const MAX_ATTEMPTS = 3;
@@ -36,7 +61,7 @@ export class SalesService {
           if (!shift) throw new ConflictException('Open the till before selling');
 
           const products = await manager.find(Product, {
-            where: { id: In([...quantities.keys()]), storeId },
+            where: { id: In(productIds), storeId },
             lock: { mode: 'pessimistic_write' },
           });
           const byId = new Map(products.map((p) => [p.id, p]));
@@ -45,7 +70,8 @@ export class SalesService {
           const amounts = [];
           let needsAgeCheck = false;
 
-          for (const [productId, quantity] of quantities) {
+          let discountTotal = 0;
+          for (const { productId, quantity, discountPercent, priceOverride, reason } of lines) {
             const product = byId.get(productId);
             if (!product) throw new BadRequestException(`Product ${productId} does not exist in this store`);
             if (!product.isActive) throw new BadRequestException(`${product.name} is archived and cannot be sold`);
@@ -54,7 +80,14 @@ export class SalesService {
             }
             if (product.ageRestriction > 0) needsAgeCheck = true;
 
-            const a = calcLine(product.price, quantity, product.vatRate);
+            let unitPrice = product.price;
+            if (discountPercent !== undefined) unitPrice = round2(product.price * (1 - discountPercent / 100));
+            if (priceOverride !== undefined) unitPrice = round2(priceOverride);
+            if (unitPrice > product.price) throw new BadRequestException(`${product.name}: a price override cannot be higher than the shelf price`);
+
+            const a = calcLine(unitPrice, quantity, product.vatRate);
+            const adjusted = unitPrice !== product.price;
+            if (adjusted) discountTotal = round2(discountTotal + calcLine(product.price, quantity, product.vatRate).lineTotal - a.lineTotal);
             amounts.push(a);
             saleItems.push(
               manager.create(SaleItem, {
@@ -62,7 +95,9 @@ export class SalesService {
                 name: product.name,
                 barcode: product.barcode,
                 quantity,
-                unitPrice: product.price,
+                unitPrice,
+                originalUnitPrice: adjusted ? product.price : null,
+                adjustmentReason: adjusted ? reason!.trim() : null,
                 vatRate: product.vatRate,
                 lineTotal: a.lineTotal,
                 vatAmount: a.vatAmount,
@@ -101,6 +136,9 @@ export class SalesService {
             netTotal: totals.netTotal,
             vatTotal: totals.vatTotal,
             changeDue,
+            discountTotal,
+            approvedById: discountTotal > 0 ? approver?.approverId ?? null : null,
+            approvedByName: discountTotal > 0 ? approver?.approverName ?? null : null,
             itemCount: saleItems.reduce((n, i) => n + (Number.isInteger(i.quantity) ? i.quantity : 1), 0),
             ageVerified: !!dto.ageVerified,
             items: saleItems,

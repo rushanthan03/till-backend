@@ -31,6 +31,7 @@ import {
 } from './infrastructure/database/entities';
 import { ProductModule } from './product/product.module';
 import { SalesModule } from './sales/sales.module';
+import { ApprovalsModule } from './approvals/approvals.module';
 import { ShiftsModule } from './shifts/shifts.module';
 import { RefundsModule } from './refunds/refunds.module';
 import { MIGRATIONS } from './infrastructure/database/migrations';
@@ -107,6 +108,7 @@ import { MIGRATIONS } from './infrastructure/database/migrations';
     UploadModule,
     ProductModule,
     SalesModule,
+    ApprovalsModule,
     ShiftsModule,
     RefundsModule,
   ],
