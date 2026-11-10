@@ -53,6 +53,13 @@ Demo approval PINs (for discounts and price overrides on the till): managers `25
    npm run seed:history -- --reset # removes the earlier demo history and rebuilds it
    ```
 
+7. **Add the rest of the demo data (optional)** – 40 loyalty customers (attached to about a quarter of the demo sales, points and spend add up), offers that are running, scheduled and ended, supplier deliveries and waste in the stock history, a few low and out-of-stock products, and attendance for every demo till session:
+   ```bash
+   npm run seed:extras            # adds it once (needs seed:demo and seed:history first)
+   npm run seed:extras -- --reset # removes the earlier extras and rebuilds them
+   ```
+   **Everything in one go** (a fresh database): `npm run seed:all` runs `seed:demo`, `seed:history` and `seed:extras` in order. The demo data is tagged, so the reset commands only ever remove demo data.
+
 ## Environment variables
 
 | Variable | Purpose |
@@ -71,6 +78,8 @@ Demo approval PINs (for discounts and price overrides on the till): managers `25
 | `npm run build` / `npm run start:prod` | Production build and run |
 | `npm run seed:demo` | Load demo tenant, stores, users and products |
 | `npm run seed:history` | Add 7 days of demo sales and closed till sessions |
+| `npm run seed:extras` | Add demo customers, offers, stock history and attendance |
+| `npm run seed:all` | Run all three demo seeds in order |
 | `npm run migration:run` | Apply database migrations (production) |
 | `npm run test:unit` | Unit tests (sales, refunds, shifts maths) |
 

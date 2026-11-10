@@ -32,7 +32,9 @@
         "migration:run:prod": "typeorm migration:run -d dist/src/infrastructure/database/data-source.js",
         "migration:run": "npm run typeorm migration:run -- -d src/infrastructure/database/data-source.ts",
         "migration:generate": "npm run typeorm migration:generate -- -d src/infrastructure/database/data-source.ts",
-        "seed:history": "ts-node -r tsconfig-paths/register scripts/seed-history.ts",
+        "seed:extras": "ts-node -r tsconfig-paths/register scripts/seed-extras.ts",
+    "seed:all": "npm run seed:demo && npm run seed:history && npm run seed:extras",
+    "seed:history": "ts-node -r tsconfig-paths/register scripts/seed-history.ts",
         "seed:demo": "ts-node -r tsconfig-paths/register scripts/seed-demo.ts"
     },
     "dependencies": {
