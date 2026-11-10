@@ -37,6 +37,7 @@ import { ProductModule } from './product/product.module';
 import { SalesModule } from './sales/sales.module';
 import { PromotionsModule } from './promotions/promotions.module';
 import { CustomersModule } from './customers/customers.module';
+import { ReportsModule } from './reports/reports.module';
 import { StockModule } from './stock/stock.module';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { ShiftsModule } from './shifts/shifts.module';
@@ -121,6 +122,7 @@ import { MIGRATIONS } from './infrastructure/database/migrations';
     SalesModule,
     ApprovalsModule,
     StockModule,
+    ReportsModule,
     PromotionsModule,
     CustomersModule,
     ShiftsModule,
