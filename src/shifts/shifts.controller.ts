@@ -7,7 +7,7 @@ import { CurrentUser } from '../infrastructure/auth/decorators/current-user.deco
 import { resolveStoreId } from '../infrastructure/auth/store-scope';
 import { UserRole } from '../infrastructure/database/entities';
 import { ShiftsService } from './shifts.service';
-import { CloseShiftDto, CountCashDto, ListShiftsQueryDto, OpenShiftDto } from './dto/shift.dto';
+import { CashMovementDto, DayReportQueryDto, CloseShiftDto, CountCashDto, ListShiftsQueryDto, OpenShiftDto } from './dto/shift.dto';
 
 const TILL_ROLES = [UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER, UserRole.CASHIER];
 const MANAGER_ROLES = [UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER];
@@ -60,6 +60,31 @@ export class ShiftsController {
     return this.shifts.close(resolveStoreId(storeId, user), user.id, dto);
   }
 
+  @Post('current/movements')
+  @Roles(...TILL_ROLES)
+  @ApiOperation({ summary: 'Paid in / paid out / safe drop / no sale on the open till session' })
+  @ApiQuery({ name: 'storeId', required: false })
+  addMovement(@Body() dto: CashMovementDto, @Query('storeId') storeId: string, @CurrentUser() user: any) {
+    return this.shifts.addMovement(resolveStoreId(storeId, user), { id: user.id, name: user.name, role: user.role }, dto);
+  }
+
+  @Get('current/movements')
+  @Roles(...TILL_ROLES)
+  @ApiOperation({ summary: 'Cash movements on the open till session' })
+  @ApiQuery({ name: 'storeId', required: false })
+  async currentMovements(@Query('storeId') storeId: string, @CurrentUser() user: any) {
+    const sid = resolveStoreId(storeId, user);
+    const shift = await this.shifts.requireOpen(sid, user.id);
+    return this.shifts.movements(shift.id, sid);
+  }
+
+  @Get('day-report')
+  @Roles(...MANAGER_ROLES)
+  @ApiOperation({ summary: 'Day end report: all till sessions of a trading day with combined totals' })
+  dayReport(@Query() query: DayReportQueryDto, @CurrentUser() user: any) {
+    return this.shifts.dayReport(resolveStoreId(query.storeId, user), query.date);
+  }
+
   @Get()
   @Roles(...MANAGER_ROLES)
   @ApiOperation({ summary: 'Till session history: filter by status, cashier, dates, or only sessions with a cash difference' })
@@ -72,6 +97,14 @@ export class ShiftsController {
   @ApiOperation({ summary: 'Headline numbers for the same filters as the list' })
   summary(@Query() query: ListShiftsQueryDto, @CurrentUser() user: any) {
     return this.shifts.summary(resolveStoreId(query.storeId, user), query);
+  }
+
+  @Get(':id/movements')
+  @Roles(...MANAGER_ROLES)
+  @ApiOperation({ summary: 'Cash movements of one till session' })
+  @ApiQuery({ name: 'storeId', required: false })
+  sessionMovements(@Param('id', ParseUUIDPipe) id: string, @Query('storeId') storeId: string, @CurrentUser() user: any) {
+    return this.shifts.movements(id, resolveStoreId(storeId, user));
   }
 
   @Get(':id')

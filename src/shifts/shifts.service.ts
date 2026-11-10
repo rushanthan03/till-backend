@@ -1,12 +1,15 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { Shift, ShiftStatus } from '../infrastructure/database/entities/shift.entity';
 import { Sale, SalePayment, SaleStatus } from '../infrastructure/database/entities/sale.entity';
+import { CashMovement, CashMovementType } from '../infrastructure/database/entities/cash-movement.entity';
+import { UserRole } from '../infrastructure/database/entities';
+import { ApprovalsService, APPROVER_ROLES } from '../approvals/approvals.service';
 import { Refund, RefundPayment } from '../infrastructure/database/entities/refund.entity';
 import { round2 } from '../sales/sale-calculations';
 import { cashVariance, expectedCash, varianceNeedsNote, VARIANCE_NOTE_THRESHOLD } from './shift-calculations';
-import { CloseShiftDto, ListShiftsQueryDto, OpenShiftDto } from './dto/shift.dto';
+import { CashMovementDto, CloseShiftDto, ListShiftsQueryDto, OpenShiftDto } from './dto/shift.dto';
 
 export interface ShiftTotals {
   transactions: number;
@@ -19,6 +22,10 @@ export interface ShiftTotals {
   refundsVat: number;
   cashRefunds: number;
   cardRefunds: number;
+  paidIn: number;
+  paidOut: number;
+  safeDrops: number;
+  noSales: number;
 }
 
 @Injectable()
@@ -26,6 +33,8 @@ export class ShiftsService {
   constructor(
     private readonly dataSource: DataSource,
     @InjectRepository(Shift) private readonly shiftRepository: Repository<Shift>,
+    @InjectRepository(CashMovement) private readonly movementRepository: Repository<CashMovement>,
+    private readonly approvals: ApprovalsService,
   ) {}
 
   findOpen(storeId: string, userId: string): Promise<Shift | null> {
@@ -97,8 +106,22 @@ export class ShiftsService {
       .where('r.shiftId = :shiftId', { shiftId })
       .groupBy('rp.method')
       .getRawMany();
+    const moves = await this.dataSource
+      .createQueryBuilder()
+      .select('m.type', 'type')
+      .addSelect('COALESCE(SUM(m.amount), 0)', 'amount')
+      .addSelect('COUNT(*)', 'count')
+      .from(CashMovement, 'm')
+      .where('m.shiftId = :shiftId', { shiftId })
+      .groupBy('m.type')
+      .getRawMany();
+    const move = (t: CashMovementType) => round2(Number(moves.find((r) => r.type === t)?.amount ?? 0));
     const by = (rows: any[], m: string) => round2(Number(rows.find((r) => r.method === m)?.amount ?? 0));
     return {
+      paidIn: move(CashMovementType.PAID_IN),
+      paidOut: move(CashMovementType.PAID_OUT),
+      safeDrops: move(CashMovementType.SAFE_DROP),
+      noSales: Number(moves.find((r) => r.type === CashMovementType.NO_SALE)?.count ?? 0),
       transactions: Number(sales.count),
       refundCount: Number(refunds.count),
       grossSales: round2(Number(sales.gross)),
@@ -112,6 +135,100 @@ export class ShiftsService {
     };
   }
 
+  /**
+   * Records cash going in or out of the drawer, or a no-sale drawer opening. Paid-outs need a manager's
+   * approval from a cashier; money leaving the drawer can never exceed the cash that should be in it.
+   */
+  async addMovement(storeId: string, user: { id: string; name: string; role?: UserRole }, dto: CashMovementDto): Promise<CashMovement> {
+    const shift = await this.requireOpen(storeId, user.id);
+    const isNoSale = dto.type === CashMovementType.NO_SALE;
+    const amount = isNoSale ? 0 : dto.amount;
+    if (!isNoSale && !amount) throw new BadRequestException('An amount is required');
+    const reason = dto.reason?.trim();
+    if (!reason) throw new BadRequestException('A reason is required');
+
+    let approver: { approverId: string; approverName: string } | null = null;
+    if (dto.type === CashMovementType.PAID_OUT) {
+      if (user.role && APPROVER_ROLES.includes(user.role)) approver = { approverId: user.id, approverName: user.name };
+      else {
+        if (!dto.approvalToken) throw new ForbiddenException('Manager approval is required for a paid out');
+        approver = await this.approvals.verifyToken(dto.approvalToken, storeId);
+      }
+    }
+
+    if (dto.type === CashMovementType.PAID_OUT || dto.type === CashMovementType.SAFE_DROP) {
+      const t = await this.totals(shift.id);
+      const inDrawer = expectedCash(shift.openingFloat, t.cashSales, t.cashRefunds, t);
+      if (amount! > inDrawer) throw new BadRequestException(`Only ${inDrawer.toFixed(2)} should be in the drawer`);
+    }
+
+    return this.movementRepository.save(
+      this.movementRepository.create({
+        storeId,
+        shiftId: shift.id,
+        userId: user.id,
+        userName: user.name,
+        type: dto.type,
+        amount: amount ?? 0,
+        reason,
+        approvedById: approver?.approverId ?? null,
+        approvedByName: approver?.approverName ?? null,
+      }),
+    );
+  }
+
+  movements(shiftId: string, storeId: string): Promise<CashMovement[]> {
+    return this.movementRepository.find({ where: { shiftId, storeId }, order: { createdAt: 'ASC' } });
+  }
+
+  /**
+   * Day end report: every till session opened on the trading day, with combined totals,
+   * cash movements and discounts. Open sessions are included live and flagged.
+   */
+  async dayReport(storeId: string, date?: string) {
+    const day = date ? new Date(`${date}T00:00:00`) : new Date(new Date().setHours(0, 0, 0, 0));
+    if (Number.isNaN(day.getTime())) throw new BadRequestException('date must be YYYY-MM-DD');
+    const next = new Date(day.getTime() + 24 * 60 * 60 * 1000);
+    const shifts = await this.shiftRepository
+      .createQueryBuilder('s')
+      .where('s.storeId = :storeId AND s.openedAt >= :day AND s.openedAt < :next', { storeId, day, next })
+      .orderBy('s.openedAt', 'ASC')
+      .getMany();
+
+    const rows = [];
+    const sum = {
+      transactions: 0, refundCount: 0, grossSales: 0, refundsTotal: 0, netSales: 0, vat: 0, cashSales: 0, cardSales: 0,
+      cashRefunds: 0, cardRefunds: 0, paidIn: 0, paidOut: 0, safeDrops: 0, noSales: 0, expectedCash: 0, countedCash: 0, variance: 0,
+    };
+    for (const sh of shifts) {
+      const d: any = await this.detail(sh.id, storeId);
+      rows.push({
+        id: sh.id, cashierName: sh.cashierName, status: sh.status, openedAt: sh.openedAt, closedAt: sh.closedAt,
+        netSales: d.netSales, expectedCash: d.expectedCash, countedCash: sh.countedCash, variance: sh.variance,
+      });
+      for (const k of ['transactions', 'refundCount', 'grossSales', 'refundsTotal', 'netSales', 'vat', 'cashSales', 'cardSales', 'cashRefunds', 'cardRefunds', 'paidIn', 'paidOut', 'safeDrops', 'noSales', 'expectedCash'] as const) {
+        sum[k] = round2(sum[k] + Number(d[k] ?? 0));
+      }
+      sum.countedCash = round2(sum.countedCash + (sh.countedCash ?? 0));
+      sum.variance = round2(sum.variance + (sh.variance ?? 0));
+    }
+    const disc = await this.dataSource
+      .createQueryBuilder()
+      .select('COALESCE(SUM(s.discountTotal), 0)', 'discounts')
+      .from(Sale, 's')
+      // discounts of the sessions in this report, so the figures always agree with the session rows
+      .where('s.storeId = :storeId AND s.status != :voided AND s.shiftId IN (:...ids)', { storeId, voided: SaleStatus.VOIDED, ids: shifts.length ? shifts.map((x) => x.id) : [null] })
+      .getRawOne();
+    return {
+      date: `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`,
+      sessions: rows.length,
+      openSessions: rows.filter((r) => r.status === ShiftStatus.OPEN).length,
+      discountTotal: round2(Number(disc.discounts)),
+      totals: sum,
+      shifts: rows,
+    };
+  }
+
   /** X report: a read-only look at the running totals. Does not close anything. */
   async xReport(shift: Shift) {
     const t = await this.totals(shift.id);
@@ -120,7 +237,7 @@ export class ShiftsService {
       ...t,
       netSales: round2(t.grossSales - t.refundsTotal),
       vat: round2(t.vatSales - t.refundsVat),
-      expectedCash: expectedCash(shift.openingFloat, t.cashSales, t.cashRefunds),
+      expectedCash: expectedCash(shift.openingFloat, t.cashSales, t.cashRefunds, t),
       varianceNoteThreshold: VARIANCE_NOTE_THRESHOLD,
     };
   }
@@ -131,7 +248,7 @@ export class ShiftsService {
    */
   async previewClose(shift: Shift, countedCash: number) {
     const t = await this.totals(shift.id);
-    const expected = expectedCash(shift.openingFloat, t.cashSales, t.cashRefunds);
+    const expected = expectedCash(shift.openingFloat, t.cashSales, t.cashRefunds, t);
     const variance = cashVariance(countedCash, expected);
     return { countedCash, expectedCash: expected, variance, requiresNote: varianceNeedsNote(variance) };
   }
@@ -145,7 +262,7 @@ export class ShiftsService {
       if (!shift) throw new NotFoundException('No open till session to close');
 
       const t = await this.totals(shift.id);
-      const expected = expectedCash(shift.openingFloat, t.cashSales, t.cashRefunds);
+      const expected = expectedCash(shift.openingFloat, t.cashSales, t.cashRefunds, t);
       const variance = cashVariance(dto.countedCash, expected);
       if (varianceNeedsNote(variance) && !dto.note?.trim()) {
         throw new BadRequestException('The cash difference is over the allowed limit: a reason is required to close the till');
@@ -167,6 +284,10 @@ export class ShiftsService {
         refundsTotal: t.refundsTotal,
         cashRefunds: t.cashRefunds,
         cardRefunds: t.cardRefunds,
+        paidIn: t.paidIn,
+        paidOut: t.paidOut,
+        safeDrops: t.safeDrops,
+        noSaleCount: t.noSales,
       });
       return manager.save(Shift, shift);
     });
@@ -243,6 +364,10 @@ export class ShiftsService {
       cardSales: shift.cardSales ?? 0,
       cashRefunds: shift.cashRefunds ?? 0,
       cardRefunds: shift.cardRefunds ?? 0,
+      paidIn: shift.paidIn ?? 0,
+      paidOut: shift.paidOut ?? 0,
+      safeDrops: shift.safeDrops ?? 0,
+      noSales: shift.noSaleCount ?? 0,
       expectedCash: shift.expectedCash ?? 0,
       varianceNoteThreshold: VARIANCE_NOTE_THRESHOLD,
     };

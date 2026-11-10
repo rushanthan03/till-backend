@@ -4,6 +4,7 @@ export { User } from './user.entity';
 export { Restaurant, SmsSendMode } from './restaurant.entity';
 export { Product, ProductUnitType } from './product.entity';
 export { Sale, SaleItem, SalePayment, SaleStatus, SalePaymentMethod } from './sale.entity';
+export { CashMovement, CashMovementType } from './cash-movement.entity';
 export { Shift, ShiftStatus } from './shift.entity';
 export { Refund, RefundItem, RefundPayment, RefundReason, RefundDisposition } from './refund.entity';
 

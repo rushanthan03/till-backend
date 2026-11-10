@@ -4,6 +4,9 @@ describe('shift calculations', () => {
   it('expected cash = float + cash sales - cash refunds', () => {
     expect(expectedCash(100, 250.4, 12.15)).toBe(338.25);
   });
+  it('expected cash includes paid in, paid out and safe drops', () => {
+    expect(expectedCash(100, 250.4, 12.15, { paidIn: 20, paidOut: 5.5, safeDrops: 150 })).toBe(202.75);
+  });
   it('variance is counted minus expected (short is negative)', () => {
     expect(cashVariance(335.25, 338.25)).toBe(-3);
     expect(cashVariance(340, 338.25)).toBe(1.75);

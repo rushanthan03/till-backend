@@ -90,4 +90,17 @@ export class Shift {
 
   @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true, transformer: decimalTransformer })
   cardRefunds: number | null;
+
+  /** Cash movements (copied at close): paid in, paid out, safe drops, and drawer-open-without-sale count. */
+  @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true, transformer: decimalTransformer })
+  paidIn: number | null;
+
+  @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true, transformer: decimalTransformer })
+  paidOut: number | null;
+
+  @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true, transformer: decimalTransformer })
+  safeDrops: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  noSaleCount: number | null;
 }
