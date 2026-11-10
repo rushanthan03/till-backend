@@ -28,14 +28,14 @@ export class ReportsService {
     const sold: any[] = await this.dataSource.query(
       `SELECT si."vatRate" AS rate, SUM(si."lineTotal") AS gross, SUM(si."vatAmount") AS vat
          FROM sale_items si JOIN sales s ON s.id = si."saleId"
-        WHERE s."restaurantId" = $1 AND s.status <> 'voided' AND s."createdAt" BETWEEN $2 AND $3
+        WHERE s."storeId" = $1 AND s.status <> 'voided' AND s."createdAt" BETWEEN $2 AND $3
         GROUP BY si."vatRate"`,
       [storeId, from, to],
     );
     const refunded: any[] = await this.dataSource.query(
       `SELECT si."vatRate" AS rate, SUM(ri."lineTotal") AS gross, SUM(ri."vatAmount") AS vat
          FROM refund_items ri JOIN refunds r ON r.id = ri."refundId" JOIN sale_items si ON si.id = ri."saleItemId"
-        WHERE r."restaurantId" = $1 AND r."createdAt" BETWEEN $2 AND $3
+        WHERE r."storeId" = $1 AND r."createdAt" BETWEEN $2 AND $3
         GROUP BY si."vatRate"`,
       [storeId, from, to],
     );
@@ -59,14 +59,14 @@ export class ReportsService {
     const sold: any[] = await this.dataSource.query(
       `SELECT p.method AS method, SUM(p.amount) AS amount, COUNT(*) AS count
          FROM sale_payments p JOIN sales s ON s.id = p."saleId"
-        WHERE s."restaurantId" = $1 AND s.status <> 'voided' AND s."createdAt" BETWEEN $2 AND $3
+        WHERE s."storeId" = $1 AND s.status <> 'voided' AND s."createdAt" BETWEEN $2 AND $3
         GROUP BY p.method`,
       [storeId, from, to],
     );
     const refunded: any[] = await this.dataSource.query(
       `SELECT rp.method AS method, SUM(rp.amount) AS amount, COUNT(*) AS count
          FROM refund_payments rp JOIN refunds r ON r.id = rp."refundId"
-        WHERE r."restaurantId" = $1 AND r."createdAt" BETWEEN $2 AND $3
+        WHERE r."storeId" = $1 AND r."createdAt" BETWEEN $2 AND $3
         GROUP BY rp.method`,
       [storeId, from, to],
     );
@@ -89,14 +89,14 @@ export class ReportsService {
               SUM(si.quantity) AS quantity, SUM(si."lineTotal") AS gross,
               SUM(COALESCE((si."originalUnitPrice" - si."unitPrice") * si.quantity, 0) + si."promoDiscount") AS discounts
          FROM sale_items si JOIN sales s ON s.id = si."saleId" LEFT JOIN products p ON p.id = si."productId"
-        WHERE s."restaurantId" = $1 AND s.status <> 'voided' AND s."createdAt" BETWEEN $2 AND $3
+        WHERE s."storeId" = $1 AND s.status <> 'voided' AND s."createdAt" BETWEEN $2 AND $3
         GROUP BY 1`,
       [storeId, from, to],
     );
     const refunded: any[] = await this.dataSource.query(
       `SELECT COALESCE(p.department, 'Unknown') AS department, SUM(ri.quantity) AS quantity, SUM(ri."lineTotal") AS gross
          FROM refund_items ri JOIN refunds r ON r.id = ri."refundId" JOIN sale_items si ON si.id = ri."saleItemId" LEFT JOIN products p ON p.id = si."productId"
-        WHERE r."restaurantId" = $1 AND r."createdAt" BETWEEN $2 AND $3
+        WHERE r."storeId" = $1 AND r."createdAt" BETWEEN $2 AND $3
         GROUP BY 1`,
       [storeId, from, to],
     );
@@ -124,12 +124,12 @@ export class ReportsService {
          SELECT si."productId" AS pid, MAX(si.name) AS name, MAX(si.barcode) AS barcode,
                 SUM(si.quantity) AS qty, SUM(si."lineTotal") AS gross, SUM(si."lineTotal" - si."vatAmount") AS net_ex
            FROM sale_items si JOIN sales s ON s.id = si."saleId"
-          WHERE s."restaurantId" = $1 AND s.status <> 'voided' AND s."createdAt" BETWEEN $2 AND $3 AND si."productId" IS NOT NULL
+          WHERE s."storeId" = $1 AND s.status <> 'voided' AND s."createdAt" BETWEEN $2 AND $3 AND si."productId" IS NOT NULL
           GROUP BY si."productId"),
        ref AS (
          SELECT ri."productId" AS pid, SUM(ri.quantity) AS qty, SUM(ri."lineTotal") AS gross, SUM(ri."lineTotal" - ri."vatAmount") AS net_ex
            FROM refund_items ri JOIN refunds r ON r.id = ri."refundId"
-          WHERE r."restaurantId" = $1 AND r."createdAt" BETWEEN $2 AND $3 AND ri."productId" IS NOT NULL
+          WHERE r."storeId" = $1 AND r."createdAt" BETWEEN $2 AND $3 AND ri."productId" IS NOT NULL
           GROUP BY ri."productId")
        SELECT sold.pid AS "productId", sold.name, sold.barcode, p.department, p."costPrice" AS cost,
               sold.qty - COALESCE(ref.qty, 0) AS quantity,

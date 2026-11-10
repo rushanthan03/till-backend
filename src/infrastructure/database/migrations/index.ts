@@ -31,6 +31,8 @@ import { AddApprovalsAndDiscounts1794223000000 } from './1794223000000-AddApprov
 import { AddCashMovements1794223100000 } from './1794223100000-AddCashMovements';
 import { AddStockMovements1794223200000 } from './1794223200000-AddStockMovements';
 import { AddPromotionsAndCustomers1794223300000 } from './1794223300000-AddPromotionsAndCustomers';
+import { CustomersPerTenant1794223400000 } from './1794223400000-CustomersPerTenant';
+import { RenameRestaurantsToStores1794223500000 } from './1794223500000-RenameRestaurantsToStores';
 
 export const MIGRATIONS = [
   InitialSchema1660000000000,
@@ -66,6 +68,8 @@ export const MIGRATIONS = [
   AddCashMovements1794223100000,
   AddStockMovements1794223200000,
   AddPromotionsAndCustomers1794223300000,
+  CustomersPerTenant1794223400000,
+  RenameRestaurantsToStores1794223500000,
 ];
 
 

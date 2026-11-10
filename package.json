@@ -1,22 +1,16 @@
 {
     "name": "till-backend",
     "version": "0.0.1",
-    "description": "The restaurant is a user-friendly web application that revolutionizes the dining experience by allowing customers to customize and place their orders directly from their smartphones conveniently. Built with NestJs and React",
-    "author": {
-        "name": "Oyinlola Olasunkanmi Raymond",
-        "url": "https://www.olasunkanmi.app/"
-    },
+    "description": "Auvren Till: supermarket till (EPOS) API. Products, sales, refunds, till sessions, stock, promotions and loyalty. Built with NestJS and PostgreSQL.",
+    "author": "Auvren – Till & Ecommerce Solutions",
     "private": true,
     "license": "UNLICENSED",
     "keywords": [
-        "restaurant",
-        "Restaurant-management System github",
-        "reservation system",
-        "Restaurant github example",
-        "Restaurant ordering system github",
-        "nestjs-react github project",
-        "NestJS-React open source projects",
-        "Nestjs-React-example github"
+        "pos",
+        "epos",
+        "supermarket",
+        "till",
+        "nestjs"
     ],
     "scripts": {
         "build": "nest build",

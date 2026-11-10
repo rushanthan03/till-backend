@@ -63,7 +63,7 @@ async function main() {
     const manager = staff.find((u) => u.role === UserRole.MANAGER);
     if (!products.length || cashiers.length < 2 || !manager) { console.log(`Skipping ${store.name}: needs products, 2 cashiers and a manager`); continue; }
 
-    const maxSeq = async (table: string, col: string) => Number((await ds.query(`SELECT COALESCE(MAX("${col}"),0) AS m FROM ${table} WHERE "restaurantId" = $1`, [store.id]))[0].m);
+    const maxSeq = async (table: string, col: string) => Number((await ds.query(`SELECT COALESCE(MAX("${col}"),0) AS m FROM ${table} WHERE "storeId" = $1`, [store.id]))[0].m);
     let receiptSeq = await maxSeq('sales', 'receiptSeq');
     let refundSeq = await maxSeq('refunds', 'refundSeq');
     let salesMade = 0, shiftsMade = 0;

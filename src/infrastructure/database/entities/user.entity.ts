@@ -84,12 +84,13 @@ export class User {
   @JoinColumn({ name: 'tenantId' })
   tenant: Tenant;
 
-  // For restaurant/outlet assignment (nullable - not all users are assigned to restaurants)
-  @Column({ type: 'uuid', nullable: true })
+  // Store assignment (nullable: tenant admins are not tied to one store)
+  // The property keeps its name (it is part of the login response); the database column is `storeId`.
+  @Column({ type: 'uuid', nullable: true, name: 'storeId' })
   restaurantId: string;
 
   @ManyToOne(() => Restaurant, (restaurant) => restaurant.users, { nullable: true })
-  @JoinColumn({ name: 'restaurantId' })
+  @JoinColumn({ name: 'storeId' })
   restaurant: Restaurant;
 
   @CreateDateColumn()

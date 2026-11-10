@@ -8,7 +8,7 @@ export enum SmsSendMode {
   OFF = 'OFF',
 }
 
-@Entity('restaurants')
+@Entity('stores')
 @Index(['tenantId'])
 export class Restaurant {
   @PrimaryGeneratedColumn('uuid')

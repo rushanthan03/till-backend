@@ -25,11 +25,11 @@ export class CashMovement {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid', name: 'restaurantId' })
+  @Column({ type: 'uuid', name: 'storeId' })
   storeId: string;
 
   @ManyToOne(() => Restaurant, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'restaurantId' })
+  @JoinColumn({ name: 'storeId' })
   restaurant: Restaurant;
 
   @Column({ type: 'uuid' })

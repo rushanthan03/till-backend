@@ -84,5 +84,6 @@ Demo approval PINs (for discounts and price overrides on the till): managers `25
 Development uses automatic table sync. For production run migrations (`npm run migration:run`, PostgreSQL 12+). Do **not** apply the output of `npm run migration:generate` as-is: older migrations and entities have drifted, so a generated diff contains unrelated statements, including `DROP COLUMN`. Write migrations by hand or keep only the statements for the tables you changed.
 
 ## Notes
-- The store is stored as `restaurants` / `restaurantId` in the database and API paths (`/restaurants`, `/outlets`). This is a legacy name only; it means "store".
+- The database calls a shop a `store` (`stores` table, `storeId` columns). API paths (`/restaurants`, `/outlets`) and the `restaurantId` / `restaurant` fields in login responses keep their older names so existing clients keep working; they all mean "store".
+- Upgrading an older database: `npm run migration:run` applies `RenameRestaurantsToStores`, which renames the table and columns in place and keeps all data.
 - Logo/banner uploads use AWS S3 and are optional.

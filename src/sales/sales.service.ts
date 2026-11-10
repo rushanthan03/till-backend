@@ -13,6 +13,7 @@ import { StockMovementType } from '../infrastructure/database/entities/stock-mov
 import { bestPromotion } from '../promotions/promotion-calculations';
 import { PromotionsService } from '../promotions/promotions.service';
 import { Customer } from '../infrastructure/database/entities/customer.entity';
+import { Restaurant } from '../infrastructure/database/entities/restaurant.entity';
 import { pointsForTotal } from '../customers/customers.service';
 import { applyPayments, calcLine, calcLineWithDiscount, formatReceiptNumber, round2, round3, sumLines } from './sale-calculations';
 
@@ -137,8 +138,9 @@ export class SalesService {
           // Loyalty: credit points and spend to the attached customer (same transaction as the sale).
           let customer: Customer | null = null;
           if (dto.customerId) {
-            customer = await manager.findOne(Customer, { where: { id: dto.customerId, storeId, isActive: true }, lock: { mode: 'pessimistic_write' } });
-            if (!customer) throw new BadRequestException('Customer not found in this store');
+            const store = await manager.findOne(Restaurant, { where: { id: storeId }, select: ['id', 'tenantId'] });
+            customer = await manager.findOne(Customer, { where: { id: dto.customerId, tenantId: store?.tenantId, isActive: true }, lock: { mode: 'pessimistic_write' } });
+            if (!customer) throw new BadRequestException('Customer not found');
             customer.pointsBalance += pointsForTotal(totals.total);
             customer.totalSpend = round2(customer.totalSpend + totals.total);
             customer.visitCount += 1;

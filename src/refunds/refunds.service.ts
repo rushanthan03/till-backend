@@ -85,7 +85,7 @@ export class RefundsService {
 
           // Points earned on refunded goods are taken back (the balance never goes below zero).
           if (sale.customerId) {
-            const cust = await manager.findOne(Customer, { where: { id: sale.customerId, storeId }, lock: { mode: 'pessimistic_write' } });
+            const cust = await manager.findOne(Customer, { where: { id: sale.customerId }, lock: { mode: 'pessimistic_write' } });
             if (cust) {
               cust.pointsBalance = Math.max(0, cust.pointsBalance - pointsForTotal(totals.total));
               cust.totalSpend = Math.max(0, round2(cust.totalSpend - totals.total));

@@ -6,19 +6,26 @@ const decimalTransformer: ValueTransformer = {
   from: (value?: string | null) => (value === null || value === undefined ? value : parseFloat(value)),
 };
 
-/** A loyalty customer of one store. Points are earned on sales (1 point per £1 paid). */
+/**
+ * A loyalty customer of a company (tenant), usable in every one of its stores. Points are earned on sales
+ * (1 point per £1 paid) and the balance is shared. `storeId` is the store the customer signed up at.
+ */
 @Entity('customers')
-@Index(['storeId', 'cardNumber'], { unique: true })
-@Index(['storeId', 'phone'])
+@Index(['tenantId', 'cardNumber'], { unique: true })
+@Index(['tenantId', 'phone'])
 export class Customer {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid', name: 'restaurantId' })
+  @Column({ type: 'uuid' })
+  tenantId: string;
+
+  /** Store where the customer signed up. */
+  @Column({ type: 'uuid', name: 'storeId' })
   storeId: string;
 
   @ManyToOne(() => Restaurant, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'restaurantId' })
+  @JoinColumn({ name: 'storeId' })
   restaurant: Restaurant;
 
   /** Number on the loyalty card; also what the till scans or types. */
