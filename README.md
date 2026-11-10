@@ -1,4 +1,4 @@
-# Supermarket Till – Backend
+# Auvren Till – Backend
 
 NestJS + PostgreSQL API for a supermarket till (EPOS): products and barcodes, VAT-inclusive pricing, sales with split payments, refunds, till sessions (X/Z reports, blind cash-up) and multi-tenant store management.
 
