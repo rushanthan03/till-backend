@@ -29,6 +29,7 @@ import { CreatePosTables1794222900000 } from './1794222900000-CreatePosTables';
 import { AddCashierUserRole1794222950000 } from './1794222950000-AddCashierUserRole';
 import { AddApprovalsAndDiscounts1794223000000 } from './1794223000000-AddApprovalsAndDiscounts';
 import { AddCashMovements1794223100000 } from './1794223100000-AddCashMovements';
+import { AddStockMovements1794223200000 } from './1794223200000-AddStockMovements';
 
 export const MIGRATIONS = [
   InitialSchema1660000000000,
@@ -62,6 +63,7 @@ export const MIGRATIONS = [
   AddCashierUserRole1794222950000,
   AddApprovalsAndDiscounts1794223000000,
   AddCashMovements1794223100000,
+  AddStockMovements1794223200000,
 ];
 
 

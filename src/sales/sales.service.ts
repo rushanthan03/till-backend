@@ -8,6 +8,8 @@ import { Sale, SaleItem, SalePayment, SalePaymentMethod, SaleStatus } from '../i
 import { CreateSaleDto, ListSalesQueryDto } from './dto/sale.dto';
 import { ApprovalsService, APPROVER_ROLES } from '../approvals/approvals.service';
 import { UserRole } from '../infrastructure/database/entities';
+import { recordStockMovements, LedgerEntry } from '../stock/stock-ledger';
+import { StockMovementType } from '../infrastructure/database/entities/stock-movement.entity';
 import { applyPayments, calcLine, formatReceiptNumber, round2, round3, sumLines } from './sale-calculations';
 
 @Injectable()
@@ -71,6 +73,7 @@ export class SalesService {
           let needsAgeCheck = false;
 
           let discountTotal = 0;
+          const ledger: LedgerEntry[] = [];
           for (const { productId, quantity, discountPercent, priceOverride, reason } of lines) {
             const product = byId.get(productId);
             if (!product) throw new BadRequestException(`Product ${productId} does not exist in this store`);
@@ -106,6 +109,7 @@ export class SalesService {
             );
             // Stock may go negative (flagged later as an exception) so a busy till is never blocked.
             product.stockQuantity = round3(product.stockQuantity - quantity);
+            ledger.push({ storeId, productId: product.id, type: StockMovementType.SALE, quantity: -quantity, quantityAfter: product.stockQuantity, userId: user.id ?? null, userName: user.name ?? null });
           }
 
           if (needsAgeCheck && !dto.ageVerified) {
@@ -151,7 +155,9 @@ export class SalesService {
               }),
             ),
           });
-          return manager.save(Sale, sale);
+          const saved = await manager.save(Sale, sale);
+          await recordStockMovements(manager, ledger.map((e) => ({ ...e, reference: saved.receiptNumber })));
+          return saved;
         });
       } catch (error: any) {
         // Two tills finishing at the same moment can pick the same receipt number; retry picks the next one.

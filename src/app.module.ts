@@ -26,12 +26,14 @@ import {
   SalePayment,
   Shift,
   CashMovement,
+  StockMovement,
   Refund,
   RefundItem,
   RefundPayment,
 } from './infrastructure/database/entities';
 import { ProductModule } from './product/product.module';
 import { SalesModule } from './sales/sales.module';
+import { StockModule } from './stock/stock.module';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { ShiftsModule } from './shifts/shifts.module';
 import { RefundsModule } from './refunds/refunds.module';
@@ -84,6 +86,7 @@ import { MIGRATIONS } from './infrastructure/database/migrations';
           SalePayment,
           Shift,
           CashMovement,
+          StockMovement,
           Refund,
           RefundItem,
           RefundPayment,
@@ -111,6 +114,7 @@ import { MIGRATIONS } from './infrastructure/database/migrations';
     ProductModule,
     SalesModule,
     ApprovalsModule,
+    StockModule,
     ShiftsModule,
     RefundsModule,
   ],

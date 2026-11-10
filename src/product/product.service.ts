@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike, FindOptionsWhere, Brackets } from 'typeorm';
+import { Repository, ILike, FindOptionsWhere, Brackets, DataSource } from 'typeorm';
+import { StockMovementType } from '../infrastructure/database/entities/stock-movement.entity';
+import { recordStockMovements } from '../stock/stock-ledger';
 import { Product } from '../infrastructure/database/entities/product.entity';
 import { CreateProductDto, UpdateProductDto, ListProductsQueryDto } from './dto/product.dto';
 import { buildSeedRows } from './product.seed';
@@ -10,6 +12,7 @@ export class ProductService {
   constructor(
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async findAll(storeId: string, query: ListProductsQueryDto) {
@@ -86,7 +89,14 @@ export class ProductService {
       costPrice: dto.costPrice ?? null,
       imageUrl: dto.imageUrl ?? null,
     });
-    return this.productRepository.save(product);
+    const saved = await this.productRepository.save(product);
+    // Starting stock is recorded so the stock history is complete from day one.
+    if (saved.stockQuantity > 0) {
+      await recordStockMovements(this.dataSource.manager, [
+        { storeId, productId: saved.id, type: StockMovementType.OPENING, quantity: saved.stockQuantity, quantityAfter: saved.stockQuantity, reason: 'Opening stock' },
+      ]);
+    }
+    return saved;
   }
 
   async update(id: string, storeId: string, dto: UpdateProductDto): Promise<Product> {
@@ -94,8 +104,16 @@ export class ProductService {
     if (dto.barcode && dto.barcode !== product.barcode) {
       await this.assertBarcodeFree(storeId, dto.barcode);
     }
+    const before = product.stockQuantity;
     Object.assign(product, dto);
-    return this.productRepository.save(product);
+    const saved = await this.productRepository.save(product);
+    // Typing a new stock figure on the product screen still leaves a trail in the stock history.
+    if (dto.stockQuantity !== undefined && saved.stockQuantity !== before) {
+      await recordStockMovements(this.dataSource.manager, [
+        { storeId, productId: saved.id, type: StockMovementType.ADJUSTMENT, quantity: saved.stockQuantity - before, quantityAfter: saved.stockQuantity, reason: 'Edited on product screen' },
+      ]);
+    }
+    return saved;
   }
 
   /** Products are archived (deactivated), never hard-deleted, so past sales stay intact. */

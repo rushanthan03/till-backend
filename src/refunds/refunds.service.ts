@@ -1,3 +1,5 @@
+import { recordStockMovements, LedgerEntry } from '../stock/stock-ledger';
+import { StockMovementType } from '../infrastructure/database/entities/stock-movement.entity';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
@@ -57,6 +59,7 @@ export class RefundsService {
           // Update the sale lines + put goods back on the shelf where the cashier said so.
           const dispositionById = new Map(dto.items.map((i) => [i.saleItemId, i.disposition]));
           const restockQty = new Map<string, number>();
+          const restocked: LedgerEntry[] = [];
           for (const line of lines) {
             const item = items.find((i) => i.id === line.saleItemId)!;
             item.refundedQuantity = round3(item.refundedQuantity + line.quantity);
@@ -70,7 +73,11 @@ export class RefundsService {
 
           if (restockQty.size) {
             const products = await manager.find(Product, { where: { id: In([...restockQty.keys()]), storeId }, lock: { mode: 'pessimistic_write' } });
-            products.forEach((p) => (p.stockQuantity = round3(p.stockQuantity + (restockQty.get(p.id) ?? 0))));
+            products.forEach((p) => {
+              const qty = restockQty.get(p.id) ?? 0;
+              p.stockQuantity = round3(p.stockQuantity + qty);
+              restocked.push({ storeId, productId: p.id, type: StockMovementType.REFUND_RESTOCK, quantity: qty, quantityAfter: p.stockQuantity, userId: user.id ?? null, userName: user.name ?? null });
+            });
             await manager.save(Product, products);
           }
 
@@ -112,7 +119,9 @@ export class RefundsService {
             }),
             payments: payments.map((p) => manager.create(RefundPayment, { method: p.method as any, amount: p.amount, reference: p.reference ?? null })),
           });
-          return manager.save(Refund, refund);
+          const savedRefund = await manager.save(Refund, refund);
+          await recordStockMovements(manager, restocked.map((e) => ({ ...e, reference: savedRefund.refundNumber })));
+          return savedRefund;
         });
       } catch (error: any) {
         const isNumberClash = error?.code === '23505' && String(error?.detail ?? '').includes('refundSeq');
