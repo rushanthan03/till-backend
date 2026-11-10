@@ -47,6 +47,12 @@ NestJS + PostgreSQL API for a supermarket till (EPOS): products and barcodes, VA
 
 Demo approval PINs (for discounts and price overrides on the till): managers `2580`, tenant admin `1234`. Managers set their own under Settings in the app.
 
+6. **Load a week of trading history (optional)** – closed till sessions with varied sales, cash movements and a few refunds, so reports and the day end report have data. Run after `seed:demo`:
+   ```bash
+   npm run seed:history            # adds it once
+   npm run seed:history -- --reset # removes the earlier demo history and rebuilds it
+   ```
+
 ## Environment variables
 
 | Variable | Purpose |
@@ -64,6 +70,7 @@ Demo approval PINs (for discounts and price overrides on the till): managers `25
 | `npm run start:dev` | Start with auto-reload |
 | `npm run build` / `npm run start:prod` | Production build and run |
 | `npm run seed:demo` | Load demo tenant, stores, users and products |
+| `npm run seed:history` | Add 7 days of demo sales and closed till sessions |
 | `npm run migration:run` | Apply database migrations (production) |
 | `npm run test:unit` | Unit tests (sales, refunds, shifts maths) |
 
