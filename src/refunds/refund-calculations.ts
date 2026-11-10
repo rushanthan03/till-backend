@@ -12,6 +12,8 @@ export interface RefundableItem {
   refundedQuantity: number;
   refundedAmount: number;
   refundedVat: number;
+  /** A promotion took money off this line: partial refunds then share the discounted total pro rata. */
+  promoDiscount?: number;
 }
 
 export interface RefundLineResult {
@@ -52,6 +54,11 @@ export function calcRefundLines(items: RefundableItem[], requested: { saleItemId
         lineTotal: round2(item.lineTotal - item.refundedAmount),
         vatAmount: round2(item.vatAmount - item.refundedVat),
       };
+    }
+    if ((item.promoDiscount ?? 0) > 0) {
+      const lineTotal = round2((item.lineTotal * quantity) / item.quantity);
+      const net = round2(lineTotal / (1 + item.vatRate / 100));
+      return { saleItemId: item.id, quantity, lineTotal, vatAmount: round2(lineTotal - net) };
     }
     const a = calcLine(item.unitPrice, quantity, item.vatRate);
     return { saleItemId: item.id, quantity, lineTotal: a.lineTotal, vatAmount: a.vatAmount };

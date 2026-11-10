@@ -75,4 +75,9 @@ describe('refund calculations', () => {
       expect(() => allocateRefundPayments(5, [{ method: 'cash', amount: 4 }], { cash: 5, card: 0 })).toThrow(BadRequestException);
     });
   });
+  it('a partial refund on a promotion line is a share of the discounted line total', () => {
+    const promoLine = item({ quantity: 4, unitPrice: 1.9, vatRate: 0, lineTotal: 6.9, vatAmount: 0, promoDiscount: 0.7 });
+    const [l] = calcRefundLines([promoLine], [{ saleItemId: 'i1', quantity: 1 }]);
+    expect(l.lineTotal).toBe(1.73);
+  });
 });

@@ -1,3 +1,5 @@
+import { Customer } from '../infrastructure/database/entities/customer.entity';
+import { pointsForTotal } from '../customers/customers.service';
 import { recordStockMovements, LedgerEntry } from '../stock/stock-ledger';
 import { StockMovementType } from '../infrastructure/database/entities/stock-movement.entity';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
@@ -79,6 +81,16 @@ export class RefundsService {
               restocked.push({ storeId, productId: p.id, type: StockMovementType.REFUND_RESTOCK, quantity: qty, quantityAfter: p.stockQuantity, userId: user.id ?? null, userName: user.name ?? null });
             });
             await manager.save(Product, products);
+          }
+
+          // Points earned on refunded goods are taken back (the balance never goes below zero).
+          if (sale.customerId) {
+            const cust = await manager.findOne(Customer, { where: { id: sale.customerId, storeId }, lock: { mode: 'pessimistic_write' } });
+            if (cust) {
+              cust.pointsBalance = Math.max(0, cust.pointsBalance - pointsForTotal(totals.total));
+              cust.totalSpend = Math.max(0, round2(cust.totalSpend - totals.total));
+              await manager.save(Customer, cust);
+            }
           }
 
           sale.refundedTotal = round2(sale.refundedTotal + totals.total);

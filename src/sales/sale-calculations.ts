@@ -16,6 +16,13 @@ export function calcLine(unitPrice: number, quantity: number, vatRate: number): 
   return { lineTotal, netAmount, vatAmount: round2(lineTotal - netAmount) };
 }
 
+/** Like calcLine, with a promotion discount taken off the gross line total (VAT is re-extracted from what is left). */
+export function calcLineWithDiscount(unitPrice: number, quantity: number, vatRate: number, discount: number): LineAmounts {
+  const lineTotal = round2(round2(unitPrice * quantity) - discount);
+  const netAmount = round2(lineTotal / (1 + vatRate / 100));
+  return { lineTotal, netAmount, vatAmount: round2(lineTotal - netAmount) };
+}
+
 export function sumLines(lines: LineAmounts[]) {
   const total = round2(lines.reduce((a, l) => a + l.lineTotal, 0));
   const vatTotal = round2(lines.reduce((a, l) => a + l.vatAmount, 0));

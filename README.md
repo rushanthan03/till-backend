@@ -71,7 +71,7 @@ Demo approval PINs (for discounts and price overrides on the till): managers `25
 `super_admin` (platform) · `tenant_admin` (company) · `manager` (refunds, reports, products) · `cashier` (till only).
 
 ## Main endpoints
-`/api/auth/login` · `/api/tenants` · `/api/tenants/:id/outlets` (stores) · `/api/tenants/:id/users` · `/api/products` · `/api/sales` · `/api/refunds` · `/api/shifts` · `/api/shifts/current/movements` (cash in/out) · `/api/shifts/day-report` · `/api/stock/{summary,movements,receipts,adjustments,stocktakes}` · `/api/approvals/verify` (manager PIN → 5-minute token for discounts/overrides)
+`/api/auth/login` · `/api/tenants` · `/api/tenants/:id/outlets` (stores) · `/api/tenants/:id/users` · `/api/products` · `/api/sales` · `/api/refunds` · `/api/shifts` · `/api/shifts/current/movements` (cash in/out) · `/api/shifts/day-report` · `/api/stock/{summary,movements,receipts,adjustments,stocktakes}` · `/api/promotions` · `/api/customers` · `/api/approvals/verify` (manager PIN → 5-minute token for discounts/overrides)
 
 ## Production database
 Development uses automatic table sync. For production run migrations (`npm run migration:run`, PostgreSQL 12+). Do **not** apply the output of `npm run migration:generate` as-is: older migrations and entities have drifted, so a generated diff contains unrelated statements, including `DROP COLUMN`. Write migrations by hand or keep only the statements for the tables you changed.

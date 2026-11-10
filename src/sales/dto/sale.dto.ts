@@ -84,6 +84,9 @@ export class CreateSaleDto {
   @IsBoolean()
   ageVerified?: boolean;
 
+  @ApiPropertyOptional({ description: 'Loyalty customer to credit with points', format: 'uuid' })
+  @IsOptional() @IsUUID() customerId?: string;
+
   @ApiPropertyOptional({ description: 'Token from POST /approvals/verify; required when a cashier applies a discount or price override' })
   @IsOptional()
   @IsString()

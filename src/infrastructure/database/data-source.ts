@@ -1,7 +1,7 @@
 import { DataSource } from 'typeorm';
 import * as dotenv from 'dotenv';
 import {
-    Tenant, User, Restaurant, Product, Sale, SaleItem, SalePayment, Shift, CashMovement, StockMovement, Refund, RefundItem, RefundPayment,
+    Tenant, User, Restaurant, Product, Sale, SaleItem, SalePayment, Shift, CashMovement, StockMovement, Promotion, Customer, Refund, RefundItem, RefundPayment,
 } from './entities';
 import { MIGRATIONS } from './migrations';
 
@@ -17,7 +17,7 @@ export const AppDataSource = new DataSource({
     synchronize: false,
     logging: process.env.NODE_ENV === 'development',
     entities: [
-        Tenant, User, Restaurant, Product, Sale, SaleItem, SalePayment, Shift, CashMovement, StockMovement, Refund, RefundItem, RefundPayment,
+        Tenant, User, Restaurant, Product, Sale, SaleItem, SalePayment, Shift, CashMovement, StockMovement, Promotion, Customer, Refund, RefundItem, RefundPayment,
     ],
     migrations: MIGRATIONS,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,

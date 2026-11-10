@@ -88,6 +88,16 @@ export class Sale {
   @Column({ type: 'decimal', precision: 12, scale: 2, default: 0, transformer: decimalTransformer })
   discountTotal: number;
 
+  /** Loyalty customer attached to the sale, and the points the sale earned. */
+  @Column({ type: 'uuid', nullable: true })
+  customerId: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  customerName: string | null;
+
+  @Column({ type: 'int', default: 0 })
+  pointsEarned: number;
+
   /** Manager who approved the discounts/overrides on this sale. */
   @Column({ type: 'uuid', nullable: true })
   approvedById: string | null;
@@ -160,6 +170,13 @@ export class SaleItem {
 
   @Column({ type: 'varchar', nullable: true })
   adjustmentReason: string | null;
+
+  /** Money taken off this line by an automatic promotion (already out of lineTotal). */
+  @Column({ type: 'decimal', precision: 12, scale: 2, default: 0, transformer: decimalTransformer })
+  promoDiscount: number;
+
+  @Column({ type: 'varchar', nullable: true })
+  promotionName: string | null;
 
   /** How much of this line has been refunded so far (quantity, value and VAT). */
   @Column({ type: 'decimal', precision: 12, scale: 3, default: 0, transformer: decimalTransformer })

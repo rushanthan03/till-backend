@@ -10,7 +10,11 @@ import { ApprovalsService, APPROVER_ROLES } from '../approvals/approvals.service
 import { UserRole } from '../infrastructure/database/entities';
 import { recordStockMovements, LedgerEntry } from '../stock/stock-ledger';
 import { StockMovementType } from '../infrastructure/database/entities/stock-movement.entity';
-import { applyPayments, calcLine, formatReceiptNumber, round2, round3, sumLines } from './sale-calculations';
+import { bestPromotion } from '../promotions/promotion-calculations';
+import { PromotionsService } from '../promotions/promotions.service';
+import { Customer } from '../infrastructure/database/entities/customer.entity';
+import { pointsForTotal } from '../customers/customers.service';
+import { applyPayments, calcLine, calcLineWithDiscount, formatReceiptNumber, round2, round3, sumLines } from './sale-calculations';
 
 @Injectable()
 export class SalesService {
@@ -73,6 +77,9 @@ export class SalesService {
           let needsAgeCheck = false;
 
           let discountTotal = 0;
+          let manualDiscount = 0;
+          // Offers running now. Lines changed by hand (manager discount/override) are not also discounted by an offer.
+          const offers = await PromotionsService.currentFor(manager, storeId);
           const ledger: LedgerEntry[] = [];
           for (const { productId, quantity, discountPercent, priceOverride, reason } of lines) {
             const product = byId.get(productId);
@@ -88,9 +95,15 @@ export class SalesService {
             if (priceOverride !== undefined) unitPrice = round2(priceOverride);
             if (unitPrice > product.price) throw new BadRequestException(`${product.name}: a price override cannot be higher than the shelf price`);
 
-            const a = calcLine(unitPrice, quantity, product.vatRate);
             const adjusted = unitPrice !== product.price;
-            if (adjusted) discountTotal = round2(discountTotal + calcLine(product.price, quantity, product.vatRate).lineTotal - a.lineTotal);
+            const promo = adjusted ? null : bestPromotion(offers as any, product, unitPrice, quantity);
+            const a = promo ? calcLineWithDiscount(unitPrice, quantity, product.vatRate, promo.discount) : calcLine(unitPrice, quantity, product.vatRate);
+            if (adjusted) {
+              const d = round2(calcLine(product.price, quantity, product.vatRate).lineTotal - a.lineTotal);
+              manualDiscount = round2(manualDiscount + d);
+              discountTotal = round2(discountTotal + d);
+            }
+            if (promo) discountTotal = round2(discountTotal + promo.discount);
             amounts.push(a);
             saleItems.push(
               manager.create(SaleItem, {
@@ -101,6 +114,8 @@ export class SalesService {
                 unitPrice,
                 originalUnitPrice: adjusted ? product.price : null,
                 adjustmentReason: adjusted ? reason!.trim() : null,
+                promoDiscount: promo?.discount ?? 0,
+                promotionName: promo?.rule.name ?? null,
                 vatRate: product.vatRate,
                 lineTotal: a.lineTotal,
                 vatAmount: a.vatAmount,
@@ -118,6 +133,18 @@ export class SalesService {
 
           const totals = sumLines(amounts);
           const { applied, changeDue } = applyPayments(totals.total, dto.payments);
+
+          // Loyalty: credit points and spend to the attached customer (same transaction as the sale).
+          let customer: Customer | null = null;
+          if (dto.customerId) {
+            customer = await manager.findOne(Customer, { where: { id: dto.customerId, storeId, isActive: true }, lock: { mode: 'pessimistic_write' } });
+            if (!customer) throw new BadRequestException('Customer not found in this store');
+            customer.pointsBalance += pointsForTotal(totals.total);
+            customer.totalSpend = round2(customer.totalSpend + totals.total);
+            customer.visitCount += 1;
+            customer.lastVisitAt = new Date();
+            await manager.save(Customer, customer);
+          }
 
           await manager.save(Product, products);
 
@@ -141,8 +168,11 @@ export class SalesService {
             vatTotal: totals.vatTotal,
             changeDue,
             discountTotal,
-            approvedById: discountTotal > 0 ? approver?.approverId ?? null : null,
-            approvedByName: discountTotal > 0 ? approver?.approverName ?? null : null,
+            approvedById: manualDiscount > 0 ? approver?.approverId ?? null : null,
+            approvedByName: manualDiscount > 0 ? approver?.approverName ?? null : null,
+            customerId: customer?.id ?? null,
+            customerName: customer?.name ?? null,
+            pointsEarned: customer ? pointsForTotal(totals.total) : 0,
             itemCount: saleItems.reduce((n, i) => n + (Number.isInteger(i.quantity) ? i.quantity : 1), 0),
             ageVerified: !!dto.ageVerified,
             items: saleItems,

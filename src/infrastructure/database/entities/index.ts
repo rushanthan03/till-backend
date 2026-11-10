@@ -6,6 +6,8 @@ export { Product, ProductUnitType } from './product.entity';
 export { Sale, SaleItem, SalePayment, SaleStatus, SalePaymentMethod } from './sale.entity';
 export { CashMovement, CashMovementType } from './cash-movement.entity';
 export { StockMovement, StockMovementType } from './stock-movement.entity';
+export { Promotion, PromotionType, PromotionScope } from './promotion.entity';
+export { Customer } from './customer.entity';
 export { Shift, ShiftStatus } from './shift.entity';
 export { Refund, RefundItem, RefundPayment, RefundReason, RefundDisposition } from './refund.entity';
 
