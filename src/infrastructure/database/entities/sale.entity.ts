@@ -104,6 +104,13 @@ export class Sale {
   @Column({ type: 'int', default: 0 })
   pointsEarned: number;
 
+  /** Loyalty points spent on this sale, and what they took off the bill (a discount, so VAT is on the rest). */
+  @Column({ type: 'int', default: 0 })
+  pointsRedeemed: number;
+
+  @Column({ type: 'decimal', precision: 12, scale: 2, default: 0, transformer: decimalTransformer })
+  pointsDiscount: number;
+
   /** Manager who approved the discounts/overrides on this sale. */
   @Column({ type: 'uuid', nullable: true })
   approvedById: string | null;
@@ -183,6 +190,14 @@ export class SaleItem {
 
   @Column({ type: 'varchar', nullable: true })
   promotionName: string | null;
+
+  /** This line's share of loyalty points spent on the sale (already out of lineTotal). */
+  @Column({ type: 'decimal', precision: 12, scale: 2, default: 0, transformer: decimalTransformer })
+  pointsDiscount: number;
+
+  /** How much of pointsDiscount has gone back to the customer as points on refunds. */
+  @Column({ type: 'decimal', precision: 12, scale: 2, default: 0, transformer: decimalTransformer })
+  refundedPointsDiscount: number;
 
   /** How much of this line has been refunded so far (quantity, value and VAT). */
   @Column({ type: 'decimal', precision: 12, scale: 3, default: 0, transformer: decimalTransformer })

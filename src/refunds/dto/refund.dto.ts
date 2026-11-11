@@ -62,7 +62,7 @@ export class CreateRefundDto {
 
   @ApiProperty({ type: [RefundPaymentInputDto] })
   @IsArray()
-  @ArrayMinSize(1)
+  @ArrayMinSize(0)
   @ArrayMaxSize(4)
   @ValidateNested({ each: true })
   @Type(() => RefundPaymentInputDto)

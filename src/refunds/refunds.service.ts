@@ -12,7 +12,8 @@ import { Sale, SaleItem, SalePayment, SaleStatus } from '../infrastructure/datab
 import { Shift, ShiftStatus } from '../infrastructure/database/entities/shift.entity';
 import { Refund, RefundDisposition, RefundItem, RefundPayment } from '../infrastructure/database/entities/refund.entity';
 import { round2, round3 } from '../sales/sale-calculations';
-import { allocateRefundPayments, calcRefundLines, formatRefundNumber, sumRefund } from './refund-calculations';
+import { allocateRefundPayments, calcRefundLines, formatRefundNumber, pointsDiscountBack, sumRefund } from './refund-calculations';
+import { pointsFor } from '../customers/loyalty';
 import { CreateRefundDto } from './dto/refund.dto';
 
 @Injectable()
@@ -65,8 +66,15 @@ export class RefundsService {
           const dispositionById = new Map(dto.items.map((i) => [i.saleItemId, i.disposition]));
           const restockQty = new Map<string, number>();
           const restocked: LedgerEntry[] = [];
+          let pointsBack = 0;
           for (const line of lines) {
             const item = items.find((i) => i.id === line.saleItemId)!;
+            // Points spent on these goods go back to the customer (worked out before the line is updated).
+            const back = pointsDiscountBack(item, line.quantity);
+            if (back > 0) {
+              item.refundedPointsDiscount = round2(item.refundedPointsDiscount + back);
+              pointsBack += pointsFor(back);
+            }
             item.refundedQuantity = round3(item.refundedQuantity + line.quantity);
             item.refundedAmount = round2(item.refundedAmount + line.lineTotal);
             item.refundedVat = round2(item.refundedVat + line.vatAmount);
@@ -86,11 +94,14 @@ export class RefundsService {
             await manager.save(Product, products);
           }
 
-          // Points earned on refunded goods are taken back (the balance never goes below zero).
+          // Points earned on refunded goods are taken back (the balance never goes below zero),
+          // and points spent on them are given back.
+          let pointsReturned = 0;
           if (sale.customerId) {
             const cust = await manager.findOne(Customer, { where: { id: sale.customerId }, lock: { mode: 'pessimistic_write' } });
             if (cust) {
-              cust.pointsBalance = Math.max(0, cust.pointsBalance - pointsForTotal(totals.total));
+              cust.pointsBalance = Math.max(0, cust.pointsBalance - pointsForTotal(totals.total)) + pointsBack;
+              pointsReturned = pointsBack;
               cust.totalSpend = Math.max(0, round2(cust.totalSpend - totals.total));
               await manager.save(Customer, cust);
             }
@@ -128,6 +139,7 @@ export class RefundsService {
             note: dto.note?.trim() || null,
             total: totals.total,
             vatTotal: totals.vatTotal,
+            pointsReturned,
             items: lines.map((l) => {
               const item = items.find((i) => i.id === l.saleItemId)!;
               return manager.create(RefundItem, {

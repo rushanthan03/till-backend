@@ -87,7 +87,7 @@ export class ReportsService {
     const sold: any[] = await this.dataSource.query(
       `SELECT COALESCE(p.department, 'Unknown') AS department,
               SUM(si.quantity) AS quantity, SUM(si."lineTotal") AS gross,
-              SUM(COALESCE((si."originalUnitPrice" - si."unitPrice") * si.quantity, 0) + si."promoDiscount") AS discounts
+              SUM(COALESCE((si."originalUnitPrice" - si."unitPrice") * si.quantity, 0) + si."promoDiscount" + si."pointsDiscount") AS discounts
          FROM sale_items si JOIN sales s ON s.id = si."saleId" LEFT JOIN products p ON p.id = si."productId"
         WHERE s."storeId" = $1 AND s.status <> 'voided' AND s."createdAt" BETWEEN $2 AND $3
         GROUP BY 1`,

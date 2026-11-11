@@ -14,6 +14,9 @@ export interface RefundableItem {
   refundedVat: number;
   /** A promotion took money off this line: partial refunds then share the discounted total pro rata. */
   promoDiscount?: number;
+  /** Loyalty points spent on this line (already out of lineTotal); refunds give them back pro rata. */
+  pointsDiscount?: number;
+  refundedPointsDiscount?: number;
 }
 
 export interface RefundLineResult {
@@ -55,7 +58,7 @@ export function calcRefundLines(items: RefundableItem[], requested: { saleItemId
         vatAmount: round2(item.vatAmount - item.refundedVat),
       };
     }
-    if ((item.promoDiscount ?? 0) > 0) {
+    if ((item.promoDiscount ?? 0) > 0 || (item.pointsDiscount ?? 0) > 0) {
       const lineTotal = round2((item.lineTotal * quantity) / item.quantity);
       const net = round2(lineTotal / (1 + item.vatRate / 100));
       return { saleItemId: item.id, quantity, lineTotal, vatAmount: round2(lineTotal - net) };
@@ -63,6 +66,19 @@ export function calcRefundLines(items: RefundableItem[], requested: { saleItemId
     const a = calcLine(item.unitPrice, quantity, item.vatRate);
     return { saleItemId: item.id, quantity, lineTotal: a.lineTotal, vatAmount: a.vatAmount };
   });
+}
+
+/**
+ * The part of a line's points discount that a refund of `quantity` gives back (in pounds).
+ * The last of the line gets whatever is left, so all of it comes back exactly once.
+ */
+export function pointsDiscountBack(item: RefundableItem, quantity: number): number {
+  const spent = item.pointsDiscount ?? 0;
+  if (spent <= 0) return 0;
+  const left = round2(spent - (item.refundedPointsDiscount ?? 0));
+  const remaining = round3(item.quantity - item.refundedQuantity);
+  if (round3(quantity) >= remaining) return Math.max(0, left);
+  return Math.min(left, round2((spent * quantity) / item.quantity));
 }
 
 export const sumRefund = (lines: RefundLineResult[]) => {
@@ -86,7 +102,11 @@ export function allocateRefundPayments(
   payments: RefundPaymentInput[],
   capacity: { cash: number; card: number },
 ): RefundPaymentInput[] {
-  if (!payments.length) throw new BadRequestException('Choose how to refund the customer');
+  if (!payments.length) {
+    // Goods paid for entirely with points: only the points go back.
+    if (total === 0) return [];
+    throw new BadRequestException('Choose how to refund the customer');
+  }
   const sum = round2(payments.reduce((a, p) => a + p.amount, 0));
   if (sum !== total) {
     throw new BadRequestException(`Refund payments (${sum.toFixed(2)}) must equal the refund total (${total.toFixed(2)})`);

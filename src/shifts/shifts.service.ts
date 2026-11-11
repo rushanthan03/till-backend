@@ -26,6 +26,9 @@ export interface ShiftTotals {
   paidOut: number;
   safeDrops: number;
   noSales: number;
+  /** Loyalty points spent: a discount, so already out of grossSales. */
+  pointsDiscount: number;
+  pointsRedeemed: number;
 }
 
 @Injectable()
@@ -77,6 +80,8 @@ export class ShiftsService {
       .select('COUNT(*)', 'count')
       .addSelect('COALESCE(SUM(s.total), 0)', 'gross')
       .addSelect('COALESCE(SUM(s.vatTotal), 0)', 'vat')
+      .addSelect('COALESCE(SUM(s.pointsDiscount), 0)', 'pointsDiscount')
+      .addSelect('COALESCE(SUM(s.pointsRedeemed), 0)', 'pointsRedeemed')
       .from(Sale, 's')
       .where('s.shiftId = :shiftId AND s.status != :voided', notVoided)
       .getRawOne();
@@ -132,6 +137,8 @@ export class ShiftsService {
       refundsVat: round2(Number(refunds.vat)),
       cashRefunds: by(refundPay, 'cash'),
       cardRefunds: by(refundPay, 'card'),
+      pointsDiscount: round2(Number(sales.pointsDiscount)),
+      pointsRedeemed: Number(sales.pointsRedeemed),
     };
   }
 
@@ -198,7 +205,7 @@ export class ShiftsService {
     const rows = [];
     const sum = {
       transactions: 0, refundCount: 0, grossSales: 0, refundsTotal: 0, netSales: 0, vat: 0, cashSales: 0, cardSales: 0,
-      cashRefunds: 0, cardRefunds: 0, paidIn: 0, paidOut: 0, safeDrops: 0, noSales: 0, expectedCash: 0, countedCash: 0, variance: 0,
+      cashRefunds: 0, cardRefunds: 0, paidIn: 0, paidOut: 0, safeDrops: 0, noSales: 0, expectedCash: 0, countedCash: 0, variance: 0, pointsDiscount: 0, pointsRedeemed: 0,
     };
     for (const sh of shifts) {
       const d: any = await this.detail(sh.id, storeId);
@@ -206,7 +213,7 @@ export class ShiftsService {
         id: sh.id, cashierName: sh.cashierName, status: sh.status, openedAt: sh.openedAt, closedAt: sh.closedAt,
         netSales: d.netSales, expectedCash: d.expectedCash, countedCash: sh.countedCash, variance: sh.variance,
       });
-      for (const k of ['transactions', 'refundCount', 'grossSales', 'refundsTotal', 'netSales', 'vat', 'cashSales', 'cardSales', 'cashRefunds', 'cardRefunds', 'paidIn', 'paidOut', 'safeDrops', 'noSales', 'expectedCash'] as const) {
+      for (const k of ['transactions', 'refundCount', 'grossSales', 'refundsTotal', 'netSales', 'vat', 'cashSales', 'cardSales', 'cashRefunds', 'cardRefunds', 'paidIn', 'paidOut', 'safeDrops', 'noSales', 'expectedCash', 'pointsDiscount', 'pointsRedeemed'] as const) {
         sum[k] = round2(sum[k] + Number(d[k] ?? 0));
       }
       sum.countedCash = round2(sum.countedCash + (sh.countedCash ?? 0));
@@ -352,8 +359,13 @@ export class ShiftsService {
     if (shift.status === ShiftStatus.OPEN) return this.xReport(shift);
     const gross = shift.grossSales ?? 0;
     const refunds = shift.refundsTotal ?? 0;
+    const pts = await this.dataSource.createQueryBuilder()
+      .select('COALESCE(SUM(s.pointsDiscount), 0)', 'value').addSelect('COALESCE(SUM(s.pointsRedeemed), 0)', 'points')
+      .from(Sale, 's').where('s.shiftId = :id AND s.status != :voided', { id: shift.id, voided: SaleStatus.VOIDED }).getRawOne();
     return {
       shift,
+      pointsDiscount: round2(Number(pts?.value ?? 0)),
+      pointsRedeemed: Number(pts?.points ?? 0),
       transactions: shift.transactionCount ?? 0,
       refundCount: shift.refundCount ?? 0,
       grossSales: gross,

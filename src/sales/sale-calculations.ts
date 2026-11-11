@@ -48,7 +48,11 @@ export interface AppliedPayment {
  * `amount` is what is applied to the bill; cash may be tendered above it.
  */
 export function applyPayments(total: number, payments: PaymentInput[]): { applied: AppliedPayment[]; changeDue: number } {
-  if (!payments.length) throw new BadRequestException('At least one payment is required');
+  if (!payments.length) {
+    // Loyalty points can cover a whole bill, leaving nothing to pay.
+    if (total === 0) return { applied: [], changeDue: 0 };
+    throw new BadRequestException('At least one payment is required');
+  }
 
   const paid = round2(payments.reduce((a, p) => a + p.amount, 0));
   if (paid < total) throw new BadRequestException(`Payment of ${paid.toFixed(2)} does not cover the total of ${total.toFixed(2)}`);

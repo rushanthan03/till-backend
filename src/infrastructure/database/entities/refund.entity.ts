@@ -77,6 +77,10 @@ export class Refund {
   @Column({ type: 'decimal', precision: 12, scale: 2, transformer: decimalTransformer })
   vatTotal: number;
 
+  /** Loyalty points given back because the refunded goods were partly paid for with points. */
+  @Column({ type: 'int', default: 0 })
+  pointsReturned: number;
+
   @OneToMany(() => RefundItem, (i) => i.refund, { cascade: true })
   items: RefundItem[];
 

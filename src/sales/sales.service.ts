@@ -16,6 +16,7 @@ import { PromotionsService } from '../promotions/promotions.service';
 import { Customer } from '../infrastructure/database/entities/customer.entity';
 import { Restaurant } from '../infrastructure/database/entities/restaurant.entity';
 import { pointsForTotal } from '../customers/customers.service';
+import { allocateDiscount, checkRedemption, pointsFor } from '../customers/loyalty';
 import { applyPayments, calcLine, calcLineWithDiscount, formatReceiptNumber, round2, round3, sumLines } from './sale-calculations';
 
 @Injectable()
@@ -148,16 +149,39 @@ export class SalesService {
             throw new BadRequestException('Age verification is required for age-restricted items in this sale');
           }
 
-          const totals = sumLines(amounts);
-          const { applied, changeDue } = applyPayments(totals.total, dto.payments);
-
-          // Loyalty: credit points and spend to the attached customer (same transaction as the sale).
+          // Loyalty customer (locked, so two tills can't spend the same points).
           let customer: Customer | null = null;
           if (dto.customerId) {
             const store = await manager.findOne(Restaurant, { where: { id: storeId }, select: ['id', 'tenantId'] });
             customer = await manager.findOne(Customer, { where: { id: dto.customerId, tenantId: store?.tenantId, isActive: true }, lock: { mode: 'pessimistic_write' } });
             if (!customer) throw new BadRequestException('Customer not found');
-            customer.pointsBalance += pointsForTotal(totals.total);
+          }
+
+          // Points spent are a discount shared across the lines, so each line's VAT is on what is actually paid.
+          let pointsRedeemed = 0;
+          let pointsDiscount = 0;
+          if (dto.redeemPoints) {
+            if (!customer) throw new BadRequestException('Attach the loyalty customer to spend points');
+            pointsDiscount = checkRedemption(dto.redeemPoints, customer.pointsBalance, sumLines(amounts).total);
+            pointsRedeemed = pointsFor(pointsDiscount);
+            const shares = allocateDiscount(amounts.map((a) => a.lineTotal), pointsDiscount);
+            shares.forEach((share, i) => {
+              if (share <= 0) return;
+              const lineTotal = round2(amounts[i].lineTotal - share);
+              const netAmount = round2(lineTotal / (1 + saleItems[i].vatRate / 100));
+              amounts[i] = { lineTotal, netAmount, vatAmount: round2(lineTotal - netAmount) };
+              saleItems[i].lineTotal = lineTotal;
+              saleItems[i].vatAmount = amounts[i].vatAmount;
+              saleItems[i].pointsDiscount = share;
+            });
+          }
+
+          const totals = sumLines(amounts);
+          const { applied, changeDue } = applyPayments(totals.total, dto.payments);
+
+          // Credit points earned (on the money paid) and spend, in the same transaction as the sale.
+          if (customer) {
+            customer.pointsBalance = customer.pointsBalance - pointsRedeemed + pointsForTotal(totals.total);
             customer.totalSpend = round2(customer.totalSpend + totals.total);
             customer.visitCount += 1;
             customer.lastVisitAt = new Date();
@@ -196,6 +220,8 @@ export class SalesService {
             customerId: customer?.id ?? null,
             customerName: customer?.name ?? null,
             pointsEarned: customer ? pointsForTotal(totals.total) : 0,
+            pointsRedeemed,
+            pointsDiscount,
             itemCount: saleItems.reduce((n, i) => n + (Number.isInteger(i.quantity) ? i.quantity : 1), 0),
             ageVerified: !!dto.ageVerified,
             items: saleItems,

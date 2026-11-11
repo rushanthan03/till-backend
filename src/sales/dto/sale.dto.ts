@@ -73,7 +73,7 @@ export class CreateSaleDto {
 
   @ApiProperty({ type: [SalePaymentInputDto] })
   @IsArray()
-  @ArrayMinSize(1)
+  @ArrayMinSize(0)
   @ArrayMaxSize(10)
   @ValidateNested({ each: true })
   @Type(() => SalePaymentInputDto)
@@ -92,6 +92,9 @@ export class CreateSaleDto {
 
   @ApiPropertyOptional({ description: 'Loyalty customer to credit with points', format: 'uuid' })
   @IsOptional() @IsUUID() customerId?: string;
+
+  @ApiPropertyOptional({ description: "Loyalty points to spend (100 points = £1 off). Needs customerId; can't be used offline", example: 250 })
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(10000000) redeemPoints?: number;
 
   @ApiPropertyOptional({ description: 'Token from POST /approvals/verify; required when a cashier applies a discount or price override' })
   @IsOptional()
