@@ -4,18 +4,20 @@
  *   - offers that are live, scheduled and ended
  *   - stock history: supplier deliveries and waste over the week, plus a few low and out-of-stock products
  *   - attendance: clock in/out for every demo till session and a manager's day
+ *   - pack barcodes: six-packs, cases and boxes (codes 9900…) that add several units per scan
+ *   - suppliers (each product gets its usual supplier) and purchase orders: a draft, one on order and one running late
  *
  *   npm run seed:extras            adds it once (needs seed:demo and seed:history first)
  *   npm run seed:extras -- --reset removes the earlier extras and rebuilds them
  *
  * Everything is tagged ("DEMO-" stock references, "[demo history]" attendance notes, @demo.customers.test emails,
- * named offers, C0000nnnn card numbers), so only demo data is ever removed.
+ * named offers, C0000nnnn card numbers, 9900… pack barcodes, suppliers noted "[demo history]"), so only demo data is ever removed.
  */
 import 'reflect-metadata';
 import { In, Like } from 'typeorm';
 import { AppDataSource } from '../src/infrastructure/database/data-source';
 import {
-  Customer, Product, Promotion, PromotionScope, PromotionType, Restaurant, Sale, Shift, StockMovement, StockMovementType, Tenant, TimeEntry, User, UserRole,
+  Customer, Product, ProductBarcode, Promotion, PurchaseOrder, PurchaseOrderLine, PurchaseOrderStatus, Supplier, PromotionScope, PromotionType, Restaurant, Sale, Shift, StockMovement, StockMovementType, Tenant, TimeEntry, User, UserRole,
 } from '../src/infrastructure/database/entities';
 import { round2, round3 } from '../src/sales/sale-calculations';
 
@@ -23,6 +25,7 @@ const TAG = '[demo history]';
 const EMAIL_DOMAIN = '@demo.customers.test';
 // Demo customers get card numbers C0000nnnn. Real ones are generated from 10000000 up, so this range is never used for a real customer.
 const DEMO_CARD = 'C0000%';
+const DEMO_PACK = '9900%';
 const PROMO_NAMES = ['3 for £5 Muffins', 'Dairy Week: 15% off', 'Fresh Drinks: 3 for £4', 'Summer BBQ: 20% off Meat & Fish', 'Bank Holiday Bakery: 10% off'];
 const SUPPLIERS = ['Booker Wholesale', 'Bidfood', 'Fresh Direct', 'Brakes', 'Park Cakes Ltd'];
 
@@ -60,6 +63,14 @@ async function main() {
     await customers.delete({ cardNumber: Like(DEMO_CARD) });
     await ds.getRepository(Promotion).delete({ name: In(PROMO_NAMES) });
     await ds.getRepository(TimeEntry).delete({ note: TAG });
+    await ds.getRepository(ProductBarcode).delete({ barcode: Like(DEMO_PACK) });
+    const demoSuppliers = await ds.getRepository(Supplier).find({ where: { tenantId: tenant.id, notes: TAG } });
+    if (demoSuppliers.length) {
+      const ids = demoSuppliers.map((x) => x.id);
+      await ds.getRepository(PurchaseOrder).delete({ supplierId: In(ids) });
+      await products.update({ supplierId: In(ids) }, { supplierId: null });
+      await ds.getRepository(Supplier).delete({ id: In(ids) });
+    }
     console.log('Removed earlier extras');
   } else if (await customers.count({ where: { cardNumber: Like(DEMO_CARD) } })) {
     console.log('Extras already exist. Use "npm run seed:extras -- --reset" to rebuild them.');
@@ -165,6 +176,83 @@ async function main() {
     await ledger.save(rows.filter((r) => r.quantity !== 0).map((r) => ledger.create(r as any) as unknown as StockMovement));
     for (const p of ps) if (stock.get(p.id) !== start.get(p.id)) await products.update(p.id, { stockQuantity: stock.get(p.id)! });
     console.log(`${store.name}: ${events.length} deliveries/write-offs, ${lows.length} low-stock products`);
+  }
+
+  // ---------- pack barcodes ----------
+  const packs = ds.getRepository(ProductBarcode);
+  const packPlan: { department: string; take: number; qty: number; label: string }[] = [
+    { department: 'Drinks', take: 4, qty: 6, label: 'Six pack' },
+    { department: 'Alcohol', take: 2, qty: 6, label: 'Case of 6' },
+    { department: 'Snacks & Confectionery', take: 2, qty: 12, label: 'Box of 12' },
+  ];
+  for (const [si, store] of stores.entries()) {
+    let n = 0;
+    const lines: string[] = [];
+    for (const plan of packPlan) {
+      const all = await products.find({ where: { storeId: store.id, department: plan.department, isActive: true, unitType: 'each' as any }, order: { name: 'ASC', barcode: 'ASC' } });
+      const ps = all.filter((p, i) => all.findIndex((x) => x.name === p.name) === i).slice(0, plan.take);
+      for (const p of ps) {
+        const barcode = `9900${si + 1}${String(++n).padStart(8, '0')}`;
+        if (await packs.count({ where: { storeId: store.id, barcode } })) continue;
+        await packs.save(packs.create({ storeId: store.id, productId: p.id, barcode, packQuantity: plan.qty, label: plan.label }));
+        lines.push(`${barcode}  ${plan.label} of ${p.name}`);
+      }
+    }
+    console.log(`${store.name}: ${lines.length} pack barcodes\n  ${lines.join('\n  ')}`);
+  }
+
+  // ---------- suppliers and purchase orders ----------
+  const supRepo = ds.getRepository(Supplier);
+  const SUPPLIER_INFO: Record<string, { contact: string; phone: string; lead: number; departments: string[] }> = {
+    'Booker Wholesale': { contact: 'Sam Patel', phone: '0113 496 0101', lead: 2, departments: ['Grocery', 'Drinks', 'Alcohol', 'Snacks & Confectionery', 'Household', 'Health & Beauty', 'Tobacco'] },
+    Bidfood: { contact: 'Lucy Grant', phone: '0113 496 0202', lead: 3, departments: ['Frozen', 'Dairy & Eggs'] },
+    'Fresh Direct': { contact: 'Omar Hussain', phone: '0113 496 0303', lead: 1, departments: ['Fruit & Veg'] },
+    Brakes: { contact: 'Kate Moss', phone: '0113 496 0404', lead: 2, departments: ['Meat & Fish'] },
+    'Park Cakes Ltd': { contact: 'Ben Hall', phone: '0113 496 0505', lead: 1, departments: ['Bakery'] },
+  };
+  const madeSuppliers: Supplier[] = [];
+  for (const [i, name] of SUPPLIERS.entries()) {
+    const info = SUPPLIER_INFO[name];
+    madeSuppliers.push(await supRepo.save(supRepo.create({
+      tenantId: tenant.id, name, contactName: info.contact, phone: info.phone, leadTimeDays: info.lead,
+      email: `orders@${name.toLowerCase().replace(/[^a-z]/g, '')}.test`, accountNumber: `FM-${10400 + i * 17}`, notes: TAG, isActive: true,
+    })));
+  }
+  const poRepo = ds.getRepository(PurchaseOrder);
+  const lineRepo = ds.getRepository(PurchaseOrderLine);
+  const isoDay = (offset: number) => new Date(Date.now() + offset * day).toISOString().slice(0, 10);
+  for (const store of stores) {
+    for (const sup of madeSuppliers) {
+      const deps = SUPPLIER_INFO[sup.name].departments;
+      await products.createQueryBuilder().update().set({ supplierId: sup.id })
+        .where('storeId = :sid AND department IN (:...deps)', { sid: store.id, deps }).execute();
+    }
+    const last = await poRepo.createQueryBuilder('o').select('COALESCE(MAX(o.seq), 0)', 'max').where('o.storeId = :sid', { sid: store.id }).getRawOne();
+    let seq = Number(last?.max ?? 0);
+    const manager = (await ds.getRepository(User).find({ where: { restaurantId: store.id, role: UserRole.MANAGER } }))[0];
+    const plan: { sup: string; status: PurchaseOrderStatus; orderedDaysAgo: number | null; expected: number | null; count: number }[] = [
+      { sup: 'Booker Wholesale', status: PurchaseOrderStatus.ORDERED, orderedDaysAgo: 1, expected: 1, count: 6 },
+      { sup: 'Bidfood', status: PurchaseOrderStatus.ORDERED, orderedDaysAgo: 5, expected: -2, count: 4 },
+      { sup: 'Park Cakes Ltd', status: PurchaseOrderStatus.DRAFT, orderedDaysAgo: null, expected: null, count: 3 },
+    ];
+    for (const po of plan) {
+      const sup = madeSuppliers.find((x) => x.name === po.sup)!;
+      const ps = (await products.find({ where: { storeId: store.id, supplierId: sup.id, isActive: true, unitType: 'each' as any }, order: { name: 'ASC' } }))
+        .filter((p, i, all) => all.findIndex((x) => x.name === p.name) === i).slice(0, po.count);
+      if (!ps.length) continue;
+      const lines = ps.map((p, i) => ({ productId: p.id, productName: p.name, barcode: p.barcode, quantity: Math.max(6, Math.ceil(p.reorderLevel * 2)), unitCost: p.costPrice ?? round2(p.price * 0.6), sortOrder: i }));
+      seq++;
+      const order = await poRepo.save(poRepo.create({
+        storeId: store.id, supplierId: sup.id, seq, number: `PO-${String(seq).padStart(6, '0')}`, status: po.status,
+        orderedAt: po.orderedDaysAgo === null ? null : new Date(Date.now() - po.orderedDaysAgo * day),
+        expectedDate: po.expected === null ? null : isoDay(po.expected),
+        totalCost: round2(lines.reduce((a, l) => a + l.quantity * l.unitCost, 0)),
+        createdById: manager?.id ?? null, createdByName: manager?.name ?? 'Manager',
+        notes: po.status === PurchaseOrderStatus.DRAFT ? 'Weekend bake: check quantities before sending' : null,
+      }));
+      await lineRepo.save(lines.map((l) => lineRepo.create({ ...l, purchaseOrderId: order.id })));
+    }
+    console.log(`${store.name}: ${SUPPLIERS.length} suppliers linked to products, ${plan.length} purchase orders`);
   }
 
   // ---------- attendance ----------

@@ -87,6 +87,10 @@ export class Product {
   @Column({ type: 'varchar', nullable: true })
   imageUrl: string | null;
 
+  /** Usual supplier: used to suggest what to reorder. */
+  @Column({ type: 'uuid', nullable: true })
+  supplierId: string | null;
+
   @Column({ type: 'boolean', default: true })
   isActive: boolean;
 

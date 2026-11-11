@@ -37,6 +37,8 @@ import { SaleClientRef1794223600000 } from './1794223600000-SaleClientRef';
 import { StaffPinAndAttendance1794223700000 } from './1794223700000-StaffPinAndAttendance';
 import { CardCharges1794223800000 } from './1794223800000-CardCharges';
 import { ReconcileEntitySchema1794223900000 } from './1794223900000-ReconcileEntitySchema';
+import { ProductBarcodes1794224000000 } from './1794224000000-ProductBarcodes';
+import { SuppliersAndPurchaseOrders1794224100000 } from './1794224100000-SuppliersAndPurchaseOrders';
 
 export const MIGRATIONS = [
   InitialSchema1660000000000,
@@ -78,6 +80,8 @@ export const MIGRATIONS = [
   StaffPinAndAttendance1794223700000,
   CardCharges1794223800000,
   ReconcileEntitySchema1794223900000,
+  ProductBarcodes1794224000000,
+  SuppliersAndPurchaseOrders1794224100000,
 ];
 
 

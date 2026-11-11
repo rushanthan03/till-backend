@@ -3,7 +3,7 @@ import { DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { SuperAdminSeeder } from './seeders/super-admin.seeder';
 import {
-  Tenant, User, Restaurant, Product, Sale, SaleItem, SalePayment, Shift, Refund, RefundItem, RefundPayment,
+  Tenant, User, Restaurant, Product, ProductBarcode, Supplier, PurchaseOrder, PurchaseOrderLine, Sale, SaleItem, SalePayment, Shift, Refund, RefundItem, RefundPayment,
 } from './entities';
 import { MIGRATIONS } from './migrations';
 
@@ -16,7 +16,7 @@ export const createDataSource = (configService: ConfigService): DataSource => {
     password: configService.get<string>('DATABASE_PASSWORD'),
     database: configService.get<string>('DATABASE_NAME'),
     entities: [
-      Tenant, User, Restaurant, Product, Sale, SaleItem, SalePayment, Shift, Refund, RefundItem, RefundPayment,
+      Tenant, User, Restaurant, Product, ProductBarcode, Supplier, PurchaseOrder, PurchaseOrderLine, Sale, SaleItem, SalePayment, Shift, Refund, RefundItem, RefundPayment,
     ],
     migrations: MIGRATIONS,
     synchronize: configService.get<string>('NODE_ENV') === 'development',

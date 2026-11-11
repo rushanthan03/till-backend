@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { createDataSource, runSeeders } from './infrastructure/database/database.config';
 import helmet from 'helmet';
@@ -24,7 +25,9 @@ async function bootstrap() {
     }
   }
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // Product CSV imports send a few thousand rows in one request.
+  app.useBodyParser('json', { limit: '5mb' });
   const configService = app.get(ConfigService);
 
   // Behind a load balancer or proxy, trust it so rate limits see each client's real address.

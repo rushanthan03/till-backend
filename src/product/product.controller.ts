@@ -18,7 +18,7 @@ import { CurrentUser } from '../infrastructure/auth/decorators/current-user.deco
 import { UserRole } from '../infrastructure/database/entities';
 import { resolveStoreId } from '../infrastructure/auth/store-scope';
 import { ProductService } from './product.service';
-import { CreateProductDto, UpdateProductDto, ListProductsQueryDto } from './dto/product.dto';
+import { CreateProductDto, UpdateProductDto, ListProductsQueryDto, ImportProductsDto } from './dto/product.dto';
 
 const READ_ROLES = [UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER, UserRole.CASHIER];
 const WRITE_ROLES = [UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER];
@@ -50,6 +50,22 @@ export class ProductController {
   @ApiQuery({ name: 'storeId', required: false })
   byBarcode(@Param('barcode') barcode: string, @Query('storeId') storeId: string, @CurrentUser() user: any) {
     return this.productService.findByBarcode(barcode, resolveStoreId(storeId, user));
+  }
+
+  @Get('export')
+  @Roles(...WRITE_ROLES)
+  @ApiOperation({ summary: 'Every product in the store with its extra barcodes (for CSV export)' })
+  @ApiQuery({ name: 'storeId', required: false })
+  exportAll(@Query('storeId') storeId: string, @CurrentUser() user: any) {
+    return this.productService.exportAll(resolveStoreId(storeId, user));
+  }
+
+  @Post('import')
+  @Roles(...WRITE_ROLES)
+  @ApiOperation({ summary: 'Import products from CSV rows (dryRun: true previews without saving)' })
+  @ApiQuery({ name: 'storeId', required: false })
+  importRows(@Body() dto: ImportProductsDto, @Query('storeId') storeId: string, @CurrentUser() user: any) {
+    return this.productService.importProducts(resolveStoreId(storeId, user), dto.rows, dto.dryRun);
   }
 
   @Post('seed-demo')

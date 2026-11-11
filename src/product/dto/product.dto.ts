@@ -1,7 +1,27 @@
-import { IsString, IsOptional, IsBoolean, IsNumber, IsInt, IsEnum, Min, Max, MinLength, Matches } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsNumber, IsInt, IsEnum, Min, Max, MinLength, MaxLength, Matches, IsArray, ArrayMaxSize, ValidateNested, IsObject, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { ProductUnitType } from '../../infrastructure/database/entities/product.entity';
+
+export class ProductBarcodeDto {
+  @ApiProperty({ example: '5000000000024' })
+  @IsString()
+  @Matches(/^[A-Za-z0-9-]{3,32}$/, { message: 'Barcode must be 3-32 letters, digits or dashes' })
+  barcode: string;
+
+  @ApiProperty({ description: 'Units added per scan', example: 6 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(999)
+  packQuantity: number;
+
+  @ApiPropertyOptional({ example: 'Six pack' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  label?: string;
+}
 
 export class CreateProductDto {
   @ApiProperty({ example: 'Whole Milk 2L' })
@@ -91,6 +111,19 @@ export class CreateProductDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'Usual supplier (null to clear)' })
+  @IsOptional()
+  @IsUUID()
+  supplierId?: string | null;
+
+  @ApiPropertyOptional({ type: [ProductBarcodeDto], description: 'Extra barcodes (multipack, case). Replaces the list when sent.' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => ProductBarcodeDto)
+  barcodes?: ProductBarcodeDto[];
 }
 
 export class UpdateProductDto extends PartialType(CreateProductDto) {}
@@ -103,4 +136,16 @@ export class ListProductsQueryDto {
   @IsOptional() @IsString() lowStock?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(200) limit?: number;
+}
+
+export class ImportProductsDto {
+  @ApiProperty({ description: 'CSV rows as heading -> text', type: 'array', items: { type: 'object' } })
+  @IsArray()
+  @ArrayMaxSize(5000)
+  @IsObject({ each: true })
+  rows: Record<string, string>[];
+
+  @ApiProperty({ description: 'true = only check and report, change nothing' })
+  @IsBoolean()
+  dryRun: boolean;
 }

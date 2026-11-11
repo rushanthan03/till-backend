@@ -23,6 +23,10 @@ import {
   Restaurant,
   User,
   Product,
+  ProductBarcode,
+  Supplier,
+  PurchaseOrder,
+  PurchaseOrderLine,
   Sale,
   SaleItem,
   SalePayment,
@@ -48,6 +52,7 @@ import { StockModule } from './stock/stock.module';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { ShiftsModule } from './shifts/shifts.module';
 import { RefundsModule } from './refunds/refunds.module';
+import { PurchasingModule } from './purchasing/purchasing.module';
 import { MIGRATIONS } from './infrastructure/database/migrations';
 
 @Module({
@@ -94,6 +99,10 @@ import { MIGRATIONS } from './infrastructure/database/migrations';
           Restaurant,
           User,
           Product,
+          ProductBarcode,
+          Supplier,
+          PurchaseOrder,
+          PurchaseOrderLine,
           Sale,
           SaleItem,
           SalePayment,
@@ -139,6 +148,7 @@ import { MIGRATIONS } from './infrastructure/database/migrations';
     CustomersModule,
     ShiftsModule,
     RefundsModule,
+    PurchasingModule,
   ],
   controllers: [AppController],
   providers: [
