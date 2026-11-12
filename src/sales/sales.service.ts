@@ -1,11 +1,14 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { Refund, RefundPayment } from '../infrastructure/database/entities/refund.entity';
 import { Product } from '../infrastructure/database/entities/product.entity';
 import { Shift, ShiftStatus } from '../infrastructure/database/entities/shift.entity';
 import { Sale, SaleItem, SalePayment, SalePaymentMethod, SaleStatus } from '../infrastructure/database/entities/sale.entity';
-import { CreateSaleDto, ListSalesQueryDto } from './dto/sale.dto';
+import { CreateSaleDto, EmailReceiptDto, ListSalesQueryDto } from './dto/sale.dto';
+import { EmailService } from '../shared/services/email.service';
+import { PermissionsService } from '../permissions/permissions.service';
+import { maskEmail, receiptEmailHtml, receiptEmailText, receiptSubject } from './receipt-email';
 import { PaymentsService } from '../payments/payments.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -28,7 +31,11 @@ export class SalesService {
     private readonly approvals: ApprovalsService,
     private readonly payments: PaymentsService,
     private readonly audit: AuditLogService,
+    private readonly email: EmailService,
+    private readonly permissions: PermissionsService,
   ) {}
+
+  private readonly logger = new Logger(SalesService.name);
 
   /**
    * Completes a sale. Prices, VAT and totals are always recalculated here from
@@ -304,6 +311,46 @@ export class SalesService {
       order: { createdAt: 'ASC' },
     });
     return Object.assign(sale, { refunds });
+  }
+
+  /**
+   * Emails the receipt (or a gift receipt) for a sale. Staff who can look up past sales may send any
+   * receipt of their store; anyone else only their own sales from the last 24 hours (the customer in
+   * front of them). The address is not stored; the audit log keeps a masked copy.
+   */
+  async emailReceipt(id: string, storeId: string, user: { id: string; name?: string; role?: string; tenantId?: string | null }, dto: EmailReceiptDto) {
+    const sale = await this.saleRepository.findOne({ where: { id, storeId }, relations: ['items', 'payments'] });
+    if (!sale) throw new NotFoundException('Sale not found');
+    if (sale.status === SaleStatus.VOIDED) throw new BadRequestException('This sale was voided');
+    const store = await this.dataSource.getRepository(Restaurant).findOne({ where: { id: storeId } });
+    if (!(await this.permissions.features(store?.tenantId ?? user.tenantId)).emailReceipts) throw new ForbiddenException('Email receipts are switched off. A company admin can switch them on in Settings.');
+
+    const canLookUp = (await this.permissions.level(user, 'reports')) !== 'no' || (await this.permissions.level(user, 'refunds')) !== 'no';
+    const recent = Date.now() - new Date(sale.createdAt).getTime() < 24 * 60 * 60 * 1000;
+    if (!canLookUp && !(sale.cashierId === user.id && recent)) throw new ForbiddenException('You can only email receipts for your own sales today');
+    if (!this.email.canSend()) throw new ServiceUnavailableException('Email is not set up yet. Ask your administrator to add the mail server details.');
+
+    const shop = { name: store?.name ?? 'Store', address: store?.address, contactEmail: store?.contactEmail, contactPhoneNumber: store?.contactPhoneNumber };
+    const gift = !!dto.gift;
+    const to = dto.email.trim();
+    try {
+      await this.email.send({
+        to,
+        subject: receiptSubject(sale, shop, gift),
+        html: receiptEmailHtml(sale, shop, gift),
+        text: receiptEmailText(sale, shop, gift),
+        fromName: shop.name,
+        replyTo: shop.contactEmail ?? undefined,
+      });
+    } catch (e: any) {
+      this.logger.error(`Receipt ${sale.receiptNumber} not emailed: ${e?.message}`);
+      throw new ServiceUnavailableException('The email could not be sent. Check the address and try again.');
+    }
+    await this.audit.record({
+      actor: user as any, storeId, action: 'sale.email_receipt', entityType: 'sale', entityId: sale.id,
+      summary: `Emailed ${gift ? 'a gift receipt' : 'the receipt'} for ${sale.receiptNumber} to ${maskEmail(to)}`,
+    });
+    return { sent: true, receiptNumber: sale.receiptNumber, gift };
   }
 
   /**

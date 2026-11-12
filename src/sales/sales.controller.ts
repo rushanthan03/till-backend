@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../infrastructure/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../infrastructure/auth/guards/roles.guard';
@@ -8,7 +8,7 @@ import { CurrentUser } from '../infrastructure/auth/decorators/current-user.deco
 import { resolveStoreId } from '../infrastructure/auth/store-scope';
 import { UserRole } from '../infrastructure/database/entities';
 import { SalesService } from './sales.service';
-import { CreateSaleDto, ListSalesQueryDto } from './dto/sale.dto';
+import { CreateSaleDto, EmailReceiptDto, ListSalesQueryDto } from './dto/sale.dto';
 
 // Staff who may ring up sales (an open till session is also required).
 const SELL_ROLES = [UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER, UserRole.CASHIER];
@@ -61,5 +61,14 @@ export class SalesController {
   @ApiQuery({ name: 'storeId', required: false })
   get(@Param('id', ParseUUIDPipe) id: string, @Query('storeId') storeId: string, @CurrentUser() user: any) {
     return this.salesService.findOne(id, resolveStoreId(storeId, user));
+  }
+
+  @Post(':id/email-receipt')
+  @HttpCode(200)
+  @Roles(...SELL_ROLES)
+  @ApiOperation({ summary: 'Email the receipt, or a gift receipt (no prices), to the customer' })
+  @ApiQuery({ name: 'storeId', required: false })
+  emailReceipt(@Param('id', ParseUUIDPipe) id: string, @Body() dto: EmailReceiptDto, @Query('storeId') storeId: string, @CurrentUser() user: any) {
+    return this.salesService.emailReceipt(id, resolveStoreId(storeId, user), { id: user.id, name: user.name, role: user.role, tenantId: user.tenantId }, dto);
   }
 }

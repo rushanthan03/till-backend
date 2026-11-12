@@ -71,3 +71,19 @@ describe('productChanges', () => {
     ]);
   });
 });
+
+import { applyFeatureUpdate, mergeFeatures } from './company-features';
+
+describe('company features', () => {
+  it('are off until switched on', () => {
+    expect(mergeFeatures(undefined)).toEqual({ emailReceipts: false });
+    expect(mergeFeatures({ emailReceipts: 'yes' })).toEqual({ emailReceipts: false });
+    expect(mergeFeatures({ emailReceipts: true, other: 1 })).toEqual({ emailReceipts: true });
+  });
+
+  it('only accept known features set to true or false', () => {
+    expect(applyFeatureUpdate({ emailReceipts: false }, { emailReceipts: true }).value).toEqual({ emailReceipts: true });
+    expect(applyFeatureUpdate({ emailReceipts: false }, { emailReceipts: 'on' }).error).toBe('Email receipts must be on or off');
+    expect(applyFeatureUpdate({ emailReceipts: false }, { smsReceipts: true }).error).toBe('Unknown setting "smsReceipts"');
+  });
+});

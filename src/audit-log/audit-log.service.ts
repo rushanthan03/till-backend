@@ -38,6 +38,7 @@ export const AUDIT_GROUPS: Record<string, string> = {
   customer: 'Customers',
   staff: 'Staff',
   permissions: 'Permissions',
+  settings: 'Settings',
 };
 
 @Injectable()

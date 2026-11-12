@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
+import { mkdir, writeFile } from 'fs/promises';
+import { join } from 'path';
 
 @Injectable()
 export class EmailService {
@@ -25,6 +27,30 @@ export class EmailService {
                 socketTimeout: 4000,
             });
         }
+    }
+
+    /** True when SMTP is set up (or, outside production, emails are saved to tmp/mail instead). */
+    canSend(): boolean {
+        return !!this.transporter || process.env.NODE_ENV !== 'production';
+    }
+
+    /**
+     * Send an email and wait for the result. Throws when it can't be sent, so the caller can tell the user.
+     * Without SMTP outside production the email is written to tmp/mail/ so it can be checked locally.
+     */
+    async send(mail: { to: string; subject: string; html: string; text?: string; fromName?: string; replyTo?: string }): Promise<{ messageId?: string; savedTo?: string }> {
+        const from = `"${(mail.fromName ?? 'Auvren Till').replace(/["\r\n]/g, '')}" <${this.configService.get('SMTP_USER')}>`;
+        if (!this.transporter) {
+            if (process.env.NODE_ENV === 'production') throw new Error('Email is not set up on the server');
+            const dir = join(process.cwd(), 'tmp', 'mail');
+            await mkdir(dir, { recursive: true });
+            const file = join(dir, `${new Date().toISOString().replace(/[:.]/g, '-')}.html`);
+            await writeFile(file, `<!-- To: ${mail.to} | Subject: ${mail.subject} -->\n${mail.html}`);
+            this.logger.warn(`SMTP not configured: saved email to ${mail.to} as ${file}`);
+            return { savedTo: file };
+        }
+        const info = await this.transporter.sendMail({ from, to: mail.to, subject: mail.subject, html: mail.html, text: mail.text, replyTo: mail.replyTo || undefined });
+        return { messageId: info.messageId };
     }
 
     /**

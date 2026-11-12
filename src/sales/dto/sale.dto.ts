@@ -1,4 +1,4 @@
-import { IsDateString } from 'class-validator';
+import { IsDateString, IsEmail } from 'class-validator';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, ValidateNested } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -113,4 +113,16 @@ export class ListSalesQueryDto {
   @IsOptional() @IsDateString() to?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(200) limit?: number;
+}
+
+export class EmailReceiptDto {
+  @ApiProperty({ example: 'customer@example.com' })
+  @IsEmail({}, { message: 'Enter a valid email address' })
+  @MaxLength(254)
+  email: string;
+
+  @ApiPropertyOptional({ description: 'Send a gift receipt: items only, no prices or payments' })
+  @IsOptional()
+  @IsBoolean()
+  gift?: boolean;
 }

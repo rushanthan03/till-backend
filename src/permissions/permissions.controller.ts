@@ -30,6 +30,20 @@ export class PermissionsController {
     return this.permissions.mine(user);
   }
 
+  @Get('features')
+  @Roles(...ALL)
+  @ApiOperation({ summary: 'Optional features switched on for the company (e.g. email receipts)' })
+  features(@CurrentUser() user: any, @Headers('x-tenant-id') tenant?: string) {
+    return this.permissions.features(companyOf(user, tenant));
+  }
+
+  @Put('features')
+  @Roles(...ADMINS)
+  @ApiOperation({ summary: 'Switch optional features on or off, e.g. { "emailReceipts": true }' })
+  updateFeatures(@Body() body: Record<string, unknown>, @CurrentUser() user: any, @Headers('x-tenant-id') tenant?: string) {
+    return this.permissions.updateFeatures(companyOf(user, tenant), body, { id: user.id, name: user.name, role: user.role, tenantId: user.tenantId });
+  }
+
   @Get()
   @Roles(...ADMINS)
   @ApiOperation({ summary: "The company's role permissions, with the list of permissions and defaults" })

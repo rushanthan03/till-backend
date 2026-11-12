@@ -41,3 +41,5 @@ lerna-debug.log*
 ecosystem.config.js
 newrelic.js
 package-lock.json
+# Emails saved locally when SMTP is not set up
+/tmp
