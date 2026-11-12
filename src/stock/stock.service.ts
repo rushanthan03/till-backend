@@ -1,3 +1,4 @@
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomBytes } from 'crypto';
@@ -15,6 +16,7 @@ export class StockService {
   constructor(
     private readonly dataSource: DataSource,
     @InjectRepository(StockMovement) private readonly movements: Repository<StockMovement>,
+    private readonly audit: AuditLogService,
     @InjectRepository(Product) private readonly products: Repository<Product>,
   ) {}
 
@@ -33,7 +35,7 @@ export class StockService {
   /** Delivery in: raises stock and, when a cost is given, updates the product's cost price. */
   async receive(storeId: string, user: Actor, dto: GoodsReceiptDto) {
     const reference = dto.reference?.trim() || `GR-${randomBytes(3).toString('hex').toUpperCase()}`;
-    return this.dataSource.transaction(async (manager) => {
+    const r = await this.dataSource.transaction(async (manager) => {
       const byId = await this.lockProducts(manager, storeId, dto.lines.map((l) => l.productId));
       const entries = [];
       let units = 0;
@@ -54,6 +56,8 @@ export class StockService {
       await recordStockMovements(manager, entries);
       return { reference, lines: dto.lines.length, units, cost };
     });
+    await this.audit.record({ actor: user, storeId, action: 'stock.receive', entityType: 'stock', entityId: r.reference, summary: `Booked in delivery ${r.reference}${dto.supplier ? ` from ${dto.supplier}` : ''}: ${r.lines} products, ${r.units} units` });
+    return r;
   }
 
   /** One-off change: adjustment (signed) or write-off (waste, damaged, expired). Never takes stock below zero. */
@@ -64,7 +68,7 @@ export class StockService {
     if (WRITE_OFF_TYPES.includes(dto.type) && dto.quantity < 0) throw new BadRequestException('Enter the quantity as a positive number');
     const change = round3(signedChange(dto.type, dto.quantity));
 
-    return this.dataSource.transaction(async (manager) => {
+    const r = await this.dataSource.transaction(async (manager) => {
       const p = (await this.lockProducts(manager, storeId, [dto.productId])).get(dto.productId)!;
       this.assertUnits(p, change);
       const after = round3(p.stockQuantity + change);
@@ -76,6 +80,8 @@ export class StockService {
       ]);
       return { productId: p.id, name: p.name, change, stockQuantity: after };
     });
+    await this.audit.record({ actor: user, storeId, action: 'stock.adjust', entityType: 'product', entityId: r.productId, summary: `${r.name}: stock ${r.change > 0 ? '+' : ''}${r.change} (${dto.type.replace(/_/g, ' ')}: ${reason}), now ${r.stockQuantity}` });
+    return r;
   }
 
   /** Stocktake: counted quantities replace the system figures. Only lines that differ are changed and recorded. */
@@ -85,7 +91,7 @@ export class StockService {
     const reference = `ST-${randomBytes(3).toString('hex').toUpperCase()}`;
     const reason = dto.name?.trim() || 'Stocktake';
 
-    return this.dataSource.transaction(async (manager) => {
+    const r = await this.dataSource.transaction(async (manager) => {
       const byId = await this.lockProducts(manager, storeId, ids);
       const entries = [];
       const lines = [];
@@ -117,6 +123,8 @@ export class StockService {
         lines: lines.filter((x) => x.variance !== 0),
       };
     });
+    await this.audit.record({ actor: user, storeId, action: 'stock.count', entityType: 'stock', entityId: r.reference, summary: `Stock count ${r.reference}: ${r.counted} products counted, ${r.changed} changed (${r.unitsShort} units short, ${r.unitsOver} over)`, details: { lines: r.lines } });
+    return r;
   }
 
   async list(storeId: string, q: ListMovementsQueryDto) {

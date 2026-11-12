@@ -15,6 +15,7 @@ export { TimeEntry } from './time-entry.entity';
 export { CardCharge, CardChargeStatus } from './card-charge.entity';
 export { Shift, ShiftStatus } from './shift.entity';
 export { Refund, RefundItem, RefundPayment, RefundReason, RefundDisposition } from './refund.entity';
+export { AuditLog } from './audit-log.entity';
 
 // Enums
 export { TenantStatus, TenantType, SubscriptionPlan } from './tenant.entity';

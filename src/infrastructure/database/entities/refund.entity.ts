@@ -65,6 +65,13 @@ export class Refund {
   @Column({ type: 'varchar', nullable: true })
   processedByName: string | null;
 
+  /** Who allowed it: the person themselves when their role may refund, else the manager who typed their PIN. */
+  @Column({ type: 'uuid', nullable: true })
+  approvedById: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  approvedByName: string | null;
+
   @Column({ type: 'enum', enum: RefundReason })
   reason: RefundReason;
 

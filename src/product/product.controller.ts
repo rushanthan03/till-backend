@@ -14,6 +14,7 @@ import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../infrastructure/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../infrastructure/auth/guards/roles.guard';
 import { Roles } from '../infrastructure/auth/decorators/roles.decorator';
+import { NeedsPermission } from '../permissions/permissions.decorator';
 import { CurrentUser } from '../infrastructure/auth/decorators/current-user.decorator';
 import { UserRole } from '../infrastructure/database/entities';
 import { resolveStoreId } from '../infrastructure/auth/store-scope';
@@ -54,6 +55,7 @@ export class ProductController {
 
   @Get('export')
   @Roles(...WRITE_ROLES)
+  @NeedsPermission('products')
   @ApiOperation({ summary: 'Every product in the store with its extra barcodes (for CSV export)' })
   @ApiQuery({ name: 'storeId', required: false })
   exportAll(@Query('storeId') storeId: string, @CurrentUser() user: any) {
@@ -62,14 +64,16 @@ export class ProductController {
 
   @Post('import')
   @Roles(...WRITE_ROLES)
+  @NeedsPermission('products')
   @ApiOperation({ summary: 'Import products from CSV rows (dryRun: true previews without saving)' })
   @ApiQuery({ name: 'storeId', required: false })
   importRows(@Body() dto: ImportProductsDto, @Query('storeId') storeId: string, @CurrentUser() user: any) {
-    return this.productService.importProducts(resolveStoreId(storeId, user), dto.rows, dto.dryRun);
+    return this.productService.importProducts(resolveStoreId(storeId, user), dto.rows, dto.dryRun, user);
   }
 
   @Post('seed-demo')
   @Roles(...WRITE_ROLES)
+  @NeedsPermission('products')
   @ApiOperation({ summary: 'Load the demo supermarket catalogue into a store' })
   @ApiQuery({ name: 'storeId', required: false })
   seed(@Query('storeId') storeId: string, @CurrentUser() user: any) {
@@ -85,14 +89,16 @@ export class ProductController {
 
   @Post()
   @Roles(...WRITE_ROLES)
+  @NeedsPermission('products')
   @ApiOperation({ summary: 'Create a product' })
   @ApiQuery({ name: 'storeId', required: false })
   create(@Body() dto: CreateProductDto, @Query('storeId') storeId: string, @CurrentUser() user: any) {
-    return this.productService.create(resolveStoreId(storeId, user), dto);
+    return this.productService.create(resolveStoreId(storeId, user), dto, user);
   }
 
   @Patch(':id')
   @Roles(...WRITE_ROLES)
+  @NeedsPermission('products')
   @ApiOperation({ summary: 'Update a product' })
   @ApiQuery({ name: 'storeId', required: false })
   update(
@@ -101,14 +107,15 @@ export class ProductController {
     @Query('storeId') storeId: string,
     @CurrentUser() user: any,
   ) {
-    return this.productService.update(id, resolveStoreId(storeId, user), dto);
+    return this.productService.update(id, resolveStoreId(storeId, user), dto, user);
   }
 
   @Delete(':id')
   @Roles(...WRITE_ROLES)
+  @NeedsPermission('products')
   @ApiOperation({ summary: 'Archive (deactivate) a product' })
   @ApiQuery({ name: 'storeId', required: false })
   archive(@Param('id', ParseUUIDPipe) id: string, @Query('storeId') storeId: string, @CurrentUser() user: any) {
-    return this.productService.archive(id, resolveStoreId(storeId, user));
+    return this.productService.archive(id, resolveStoreId(storeId, user), user);
   }
 }

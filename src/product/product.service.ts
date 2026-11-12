@@ -1,3 +1,4 @@
+import { AuditActor, AuditLogService } from '../audit-log/audit-log.service';
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Brackets, DataSource, EntityManager, In } from 'typeorm';
@@ -27,6 +28,25 @@ export interface ImportRowResult {
   warnings: string[];
 }
 
+const FIELD_WORDS: Record<string, string> = {
+  name: 'name', barcode: 'barcode', price: 'price', costPrice: 'cost', vatRate: 'VAT %', stockQuantity: 'stock', reorderLevel: 'reorder level',
+  isActive: 'on sale', category: 'department', unitType: 'sold by', ageRestriction: 'age limit', supplierId: 'supplier', sku: 'SKU', brand: 'brand',
+};
+const fmt = (v: unknown) => (v === null || v === undefined || v === '' ? 'none' : typeof v === 'boolean' ? (v ? 'yes' : 'no') : String(v));
+
+/** Fields that really changed (numbers compared as numbers, so "1.50" and 1.5 are the same). */
+export function productChanges(before: Record<string, any>, after: Record<string, any>, keys: string[]) {
+  const out: { field: string; from: unknown; to: unknown }[] = [];
+  for (const k of keys) {
+    if (k === 'imageUrl' || k === 'description') continue;
+    const a = before[k];
+    const b = after[k];
+    const same = typeof a === 'number' || typeof b === 'number' ? Number(a ?? NaN) === Number(b ?? NaN) || (a == null && b == null) : (a ?? null) === (b ?? null);
+    if (!same) out.push({ field: k, from: a ?? null, to: b ?? null });
+  }
+  return out;
+}
+
 @Injectable()
 export class ProductService {
   constructor(
@@ -38,6 +58,7 @@ export class ProductService {
     private readonly supplierRepository: Repository<Supplier>,
     @InjectRepository(Restaurant)
     private readonly storeRepository: Repository<Restaurant>,
+    private readonly audit: AuditLogService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -138,7 +159,7 @@ export class ProductService {
     if (!ok) throw new BadRequestException('Supplier not found');
   }
 
-  async create(storeId: string, dto: CreateProductDto): Promise<ProductView> {
+  async create(storeId: string, dto: CreateProductDto, actor?: AuditActor): Promise<ProductView> {
     const { barcodes, ...fields } = dto;
     await this.assertSupplier(storeId, fields.supplierId);
     const extras = this.cleanExtras(barcodes ?? [], fields.barcode, fields.unitType ?? ProductUnitType.EACH);
@@ -164,10 +185,13 @@ export class ProductService {
         ]);
       }
       return (await this.withBarcodes([saved], m))[0];
+    }).then(async (view) => {
+      await this.audit.record({ actor, storeId, action: 'product.create', entityType: 'product', entityId: view.id, summary: `Added ${view.name} (${view.barcode}) at £${Number(view.price).toFixed(2)}` });
+      return view;
     });
   }
 
-  async update(id: string, storeId: string, dto: UpdateProductDto): Promise<ProductView> {
+  async update(id: string, storeId: string, dto: UpdateProductDto, actor?: AuditActor): Promise<ProductView> {
     const { barcodes, ...fields } = dto;
     const product = await this.productRepository.findOne({ where: { id, storeId } });
     if (!product) throw new NotFoundException('Product not found');
@@ -177,6 +201,7 @@ export class ProductService {
     const toCheck = [...(fields.barcode && fields.barcode !== product.barcode ? [fields.barcode] : []), ...(extras ?? []).map((b) => b.barcode)];
     await this.assertBarcodesFree(storeId, toCheck, id);
     const before = product.stockQuantity;
+    const snapshot = { ...product };
     Object.assign(product, fields);
     return this.dataSource.transaction(async (m) => {
       const saved = await m.save(product);
@@ -188,15 +213,32 @@ export class ProductService {
         ]);
       }
       return (await this.withBarcodes([saved], m))[0];
+    }).then(async (view) => {
+      const changes = productChanges(snapshot, product, Object.keys(fields));
+      if (changes.length || extras) {
+        const price = changes.find((c) => c.field === 'price');
+        await this.audit.record({
+          actor,
+          storeId,
+          action: price ? 'product.price' : 'product.update',
+          entityType: 'product',
+          entityId: id,
+          summary: `${view.name}: ${[...changes.map((c) => `${FIELD_WORDS[c.field] ?? c.field} ${fmt(c.from)} → ${fmt(c.to)}`), ...(extras ? ['pack barcodes updated'] : [])].join(', ')}`,
+          details: { changes },
+        });
+      }
+      return view;
     });
   }
 
   /** Products are archived (deactivated), never hard-deleted, so past sales stay intact. */
-  async archive(id: string, storeId: string): Promise<ProductView> {
+  async archive(id: string, storeId: string, actor?: AuditActor): Promise<ProductView> {
     const product = await this.productRepository.findOne({ where: { id, storeId } });
     if (!product) throw new NotFoundException('Product not found');
     product.isActive = false;
-    return (await this.withBarcodes([await this.productRepository.save(product)]))[0];
+    const view = (await this.withBarcodes([await this.productRepository.save(product)]))[0];
+    await this.audit.record({ actor, storeId, action: 'product.archive', entityType: 'product', entityId: id, summary: `Removed ${product.name} (${product.barcode}) from sale` });
+    return view;
   }
 
   /** Loads the demo catalogue; products whose barcode already exists are skipped. */
@@ -216,7 +258,7 @@ export class ProductService {
    * a known one updates only the cells that are filled in. With dryRun nothing is saved,
    * so the screen can show exactly what will happen. Rows with errors are skipped.
    */
-  async importProducts(storeId: string, rawRows: Record<string, unknown>[], dryRun: boolean) {
+  async importProducts(storeId: string, rawRows: Record<string, unknown>[], dryRun: boolean, actor?: AuditActor) {
     if (rawRows.length > MAX_IMPORT_ROWS) throw new BadRequestException(`At most ${MAX_IMPORT_ROWS} rows per import`);
 
     const products = await this.productRepository.find({ where: { storeId } });
@@ -311,6 +353,9 @@ export class ProductService {
       });
     }
 
+    if (!dryRun && (summary.create || summary.update)) {
+      await this.audit.record({ actor, storeId, action: 'product.import', entityType: 'product', summary: `Imported products from a file: ${summary.create} added, ${summary.update} changed`, details: { summary } });
+    }
     return { dryRun, summary, rows: plan.map((p) => p.result) };
   }
 

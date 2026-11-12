@@ -1,3 +1,4 @@
+import { AuditLogService } from '../audit-log/audit-log.service';
 import {
   Controller,
   Get,
@@ -56,12 +57,21 @@ export class UsersController {
 @Controller('tenants/:tenantId/users')
 @UseGuards(JwtAuthGuard, RolesGuard, TenantGuard)
 export class TenantUsersController {
-  constructor(private readonly userManagementService: UserManagementService) { }
+  constructor(
+    private readonly userManagementService: UserManagementService,
+    private readonly audit: AuditLogService,
+  ) { }
+
+  private log(actor: User, tenantId: string, action: string, target: { id: string; name: string; email?: string; restaurantId?: string | null }, summary: string, details?: Record<string, unknown>) {
+    return this.audit.record({ actor, tenantId, storeId: target.restaurantId ?? null, action, entityType: 'user', entityId: target.id, summary, details });
+  }
 
   @Post()
   @Roles(UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN)
-  create(@Param('tenantId') tenantId: string, @Body() createUserDto: CreateUserDto) {
-    return this.userManagementService.create(tenantId, createUserDto);
+  async create(@Param('tenantId') tenantId: string, @Body() createUserDto: CreateUserDto, @CurrentUser() currentUser: User) {
+    const u = await this.userManagementService.create(tenantId, createUserDto);
+    await this.log(currentUser, tenantId, 'staff.create', u, `Added ${u.name} (${u.email}) as ${roleWord(u.role)}`);
+    return u;
   }
 
   @Get()
@@ -83,63 +93,93 @@ export class TenantUsersController {
 
   @Patch(':id')
   @Roles(UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN)
-  update(
+  async update(
+    @Param('tenantId') tenantId: string,
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto,
     @CurrentUser() currentUser: User,
   ) {
-    return this.userManagementService.update(id, updateUserDto, currentUser);
+    const before = await this.userManagementService.findOne(id);
+    const after = await this.userManagementService.update(id, updateUserDto, currentUser);
+    const changes: string[] = [];
+    if (before.role !== after.role) changes.push(`role ${roleWord(before.role)} → ${roleWord(after.role)}`);
+    if (before.status !== after.status) changes.push(`status ${before.status} → ${after.status}`);
+    if (before.name !== after.name) changes.push(`name ${before.name} → ${after.name}`);
+    if (before.email !== after.email) changes.push(`email ${before.email} → ${after.email}`);
+    if ((before.restaurantId ?? null) !== (after.restaurantId ?? null)) changes.push('store changed');
+    if ((updateUserDto as any).password) changes.push('password changed');
+    if (changes.length) await this.log(currentUser, tenantId, after.role !== before.role ? 'staff.role' : 'staff.update', after, `${after.name}: ${changes.join(', ')}`);
+    return after;
   }
 
   @Delete(':id')
   @Roles(UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN)
   @ApiOperation({ summary: 'Delete or archive a user under a tenant' })
-  delete(
+  async delete(
+    @Param('tenantId') tenantId: string,
     @Param('id') id: string,
     @CurrentUser() currentUser: User,
   ) {
-    return this.userManagementService.archive(id, currentUser);
+    const u = await this.userManagementService.archive(id, currentUser);
+    await this.log(currentUser, tenantId, 'staff.archive', u, `Archived ${u.name} (${u.email})`);
+    return u;
   }
 
   @Post(':id/archive')
   @Roles(UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN)
   @ApiOperation({ summary: 'Archive a user under a tenant' })
-  archive(
+  async archive(
+    @Param('tenantId') tenantId: string,
     @Param('id') id: string,
     @CurrentUser() currentUser: User,
   ) {
-    return this.userManagementService.archive(id, currentUser);
+    const u = await this.userManagementService.archive(id, currentUser);
+    await this.log(currentUser, tenantId, 'staff.archive', u, `Archived ${u.name} (${u.email})`);
+    return u;
   }
 
   @Post(':id/unarchive')
   @Roles(UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN)
   @ApiOperation({ summary: 'Unarchive a user under a tenant' })
-  unarchive(
+  async unarchive(
+    @Param('tenantId') tenantId: string,
     @Param('id') id: string,
     @CurrentUser() currentUser: User,
   ) {
-    return this.userManagementService.unarchive(id, currentUser);
+    const u = await this.userManagementService.unarchive(id, currentUser);
+    await this.log(currentUser, tenantId, 'staff.unarchive', u, `Restored ${u.name} (${u.email})`);
+    return u;
   }
 
   @Post(':id/reactivate')
   @Roles(UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN)
   @ApiOperation({ summary: 'Reactivate a user under a tenant' })
-  reactivate(
+  async reactivate(
+    @Param('tenantId') tenantId: string,
     @Param('id') id: string,
     @CurrentUser() currentUser: User,
   ) {
-    return this.userManagementService.reactivate(id, currentUser);
+    const u = await this.userManagementService.reactivate(id, currentUser);
+    await this.log(currentUser, tenantId, 'staff.reactivate', u, `Reactivated ${u.name} (${u.email})`);
+    return u;
   }
 
   @Post(':id/reset-password')
   @Roles(UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER)
   @ApiOperation({ summary: 'Reset staff/user password directly or with temporary password under a tenant' })
-  resetPassword(
+  async resetPassword(
     @Param('tenantId') tenantId: string,
     @Param('id') id: string,
     @CurrentUser() currentUser: User,
     @Body() resetPasswordDto?: ResetPasswordDto,
   ) {
-    return this.userManagementService.resetPassword(id, currentUser, tenantId, resetPasswordDto);
+    const r = await this.userManagementService.resetPassword(id, currentUser, tenantId, resetPasswordDto);
+    const u = await this.userManagementService.findOne(id);
+    await this.log(currentUser, tenantId, 'staff.password_reset', u, `Reset the password for ${u.name} (${u.email})`);
+    return r;
   }
+}
+
+function roleWord(role?: string): string {
+  return ({ tenant_admin: 'company admin', manager: 'manager', cashier: 'cashier', super_admin: 'platform admin' } as Record<string, string>)[role ?? ''] ?? role ?? '';
 }

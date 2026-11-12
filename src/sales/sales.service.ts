@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { Refund, RefundPayment } from '../infrastructure/database/entities/refund.entity';
@@ -7,7 +7,8 @@ import { Shift, ShiftStatus } from '../infrastructure/database/entities/shift.en
 import { Sale, SaleItem, SalePayment, SalePaymentMethod, SaleStatus } from '../infrastructure/database/entities/sale.entity';
 import { CreateSaleDto, ListSalesQueryDto } from './dto/sale.dto';
 import { PaymentsService } from '../payments/payments.service';
-import { ApprovalsService, APPROVER_ROLES } from '../approvals/approvals.service';
+import { ApprovalsService } from '../approvals/approvals.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { UserRole } from '../infrastructure/database/entities';
 import { recordStockMovements, LedgerEntry } from '../stock/stock-ledger';
 import { StockMovementType } from '../infrastructure/database/entities/stock-movement.entity';
@@ -26,6 +27,7 @@ export class SalesService {
     @InjectRepository(Sale) private readonly saleRepository: Repository<Sale>,
     private readonly approvals: ApprovalsService,
     private readonly payments: PaymentsService,
+    private readonly audit: AuditLogService,
   ) {}
 
   /**
@@ -33,7 +35,7 @@ export class SalesService {
    * the product records, never trusted from the client. Everything runs in one
    * transaction: the sale, its lines and payments, and the stock deduction.
    */
-  async create(storeId: string, user: { id?: string; name?: string; role?: UserRole }, dto: CreateSaleDto): Promise<Sale> {
+  async create(storeId: string, user: { id?: string; name?: string; role?: UserRole; tenantId?: string | null }, dto: CreateSaleDto): Promise<Sale> {
     // Plain lines for the same product are merged so each is checked and deducted once.
     // Lines with a discount or override stay separate: each keeps its own price.
     const plain = new Map<string, number>();
@@ -50,17 +52,10 @@ export class SalesService {
     for (const [productId, quantity] of plain) lines.push({ productId, quantity });
     const productIds = [...new Set(lines.map((l) => l.productId))];
 
-    // Cashiers need a manager's approval for any price change; managers and admins may do it themselves.
-    const hasAdjustment = lines.some((l) => l.discountPercent !== undefined || l.priceOverride !== undefined);
+        const hasAdjustment = lines.some((l) => l.discountPercent !== undefined || l.priceOverride !== undefined);
+    // Whether this person may change prices themselves, needs a manager's PIN, or not at all is set per company.
     let approver: { approverId: string; approverName: string } | null = null;
-    if (hasAdjustment) {
-      if (user.role && APPROVER_ROLES.includes(user.role)) {
-        approver = { approverId: user.id!, approverName: user.name ?? '' };
-      } else {
-        if (!dto.approvalToken) throw new ForbiddenException('Manager approval is required for discounts and price overrides');
-        approver = await this.approvals.verifyToken(dto.approvalToken, storeId);
-      }
-    }
+    if (hasAdjustment) approver = await this.approvals.authorise(storeId, { id: user.id!, name: user.name, role: user.role, tenantId: user.tenantId }, 'discounts', dto.approvalToken);
 
     // Sales rung up while the till was offline arrive later with the time they were made.
     let soldAt: Date | null = null;
@@ -79,7 +74,7 @@ export class SalesService {
     const MAX_ATTEMPTS = 3;
     for (let attempt = 1; ; attempt++) {
       try {
-        return await this.dataSource.transaction(async (manager) => {
+        const done = await this.dataSource.transaction(async (manager) => {
           // Sales belong to a till session: the cashier must have opened the till first.
           const shift = await manager.findOne(Shift, { where: { storeId, userId: user.id, status: ShiftStatus.OPEN } });
           if (!shift) throw new ConflictException('Open the till before selling');
@@ -239,6 +234,8 @@ export class SalesService {
           await recordStockMovements(manager, ledger.map((e) => ({ ...e, reference: saved.receiptNumber })));
           return saved;
         });
+        if (done.items?.some((i) => i.originalUnitPrice != null)) await this.auditPriceChanges(done, user);
+        return done;
       } catch (error: any) {
         // Two tills finishing at the same moment can pick the same receipt number; retry picks the next one.
         if (error?.code === '23505' && String(error?.constraint ?? error?.detail ?? '').includes('clientRef')) {
@@ -250,6 +247,26 @@ export class SalesService {
         throw error;
       }
     }
+  }
+
+  /** One audit line per sale that had prices changed by hand, naming who approved. */
+  private async auditPriceChanges(sale: Sale, user: { id?: string; name?: string; role?: UserRole; tenantId?: string | null }) {
+    const changed = sale.items.filter((i) => i.originalUnitPrice != null);
+    const off = round2(changed.reduce((a, i) => a + (Number(i.originalUnitPrice) - Number(i.unitPrice)) * Number(i.quantity), 0));
+    const self = sale.approvedById === user.id;
+    await this.audit.record({
+      actor: { id: user.id, name: user.name, role: user.role, tenantId: user.tenantId },
+      storeId: sale.storeId,
+      action: 'sale.price_change',
+      entityType: 'sale',
+      entityId: sale.id,
+      summary: `Receipt ${sale.receiptNumber}: ${changed.length} price change${changed.length > 1 ? 's' : ''}, £${off.toFixed(2)} off${self ? '' : `, approved by ${sale.approvedByName}`}`,
+      details: {
+        receiptNumber: sale.receiptNumber,
+        approvedBy: sale.approvedByName,
+        lines: changed.map((i) => ({ name: i.name, quantity: Number(i.quantity), was: Number(i.originalUnitPrice), now: Number(i.unitPrice), reason: i.adjustmentReason })),
+      },
+    });
   }
 
   async findAll(storeId: string, query: ListSalesQueryDto) {

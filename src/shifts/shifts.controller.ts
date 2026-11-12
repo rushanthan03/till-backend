@@ -3,6 +3,7 @@ import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../infrastructure/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../infrastructure/auth/guards/roles.guard';
 import { Roles } from '../infrastructure/auth/decorators/roles.decorator';
+import { NeedsPermission } from '../permissions/permissions.decorator';
 import { CurrentUser } from '../infrastructure/auth/decorators/current-user.decorator';
 import { resolveStoreId } from '../infrastructure/auth/store-scope';
 import { UserRole } from '../infrastructure/database/entities';
@@ -65,7 +66,7 @@ export class ShiftsController {
   @ApiOperation({ summary: 'Paid in / paid out / safe drop / no sale on the open till session' })
   @ApiQuery({ name: 'storeId', required: false })
   addMovement(@Body() dto: CashMovementDto, @Query('storeId') storeId: string, @CurrentUser() user: any) {
-    return this.shifts.addMovement(resolveStoreId(storeId, user), { id: user.id, name: user.name, role: user.role }, dto);
+    return this.shifts.addMovement(resolveStoreId(storeId, user), { id: user.id, name: user.name, role: user.role, tenantId: user.tenantId }, dto);
   }
 
   @Get('current/movements')
@@ -80,6 +81,7 @@ export class ShiftsController {
 
   @Get('day-report')
   @Roles(...MANAGER_ROLES)
+  @NeedsPermission('reports')
   @ApiOperation({ summary: 'Day end report: all till sessions of a trading day with combined totals' })
   dayReport(@Query() query: DayReportQueryDto, @CurrentUser() user: any) {
     return this.shifts.dayReport(resolveStoreId(query.storeId, user), query.date);
@@ -87,6 +89,7 @@ export class ShiftsController {
 
   @Get()
   @Roles(...MANAGER_ROLES)
+  @NeedsPermission('reports')
   @ApiOperation({ summary: 'Till session history: filter by status, cashier, dates, or only sessions with a cash difference' })
   list(@Query() query: ListShiftsQueryDto, @CurrentUser() user: any) {
     return this.shifts.list(resolveStoreId(query.storeId, user), query);
@@ -94,6 +97,7 @@ export class ShiftsController {
 
   @Get('summary')
   @Roles(...MANAGER_ROLES)
+  @NeedsPermission('reports')
   @ApiOperation({ summary: 'Headline numbers for the same filters as the list' })
   summary(@Query() query: ListShiftsQueryDto, @CurrentUser() user: any) {
     return this.shifts.summary(resolveStoreId(query.storeId, user), query);
@@ -101,6 +105,7 @@ export class ShiftsController {
 
   @Get(':id/movements')
   @Roles(...MANAGER_ROLES)
+  @NeedsPermission('reports')
   @ApiOperation({ summary: 'Cash movements of one till session' })
   @ApiQuery({ name: 'storeId', required: false })
   sessionMovements(@Param('id', ParseUUIDPipe) id: string, @Query('storeId') storeId: string, @CurrentUser() user: any) {
@@ -109,6 +114,7 @@ export class ShiftsController {
 
   @Get(':id')
   @Roles(...MANAGER_ROLES)
+  @NeedsPermission('reports')
   @ApiOperation({ summary: 'One session with its figures (live if open, saved Z report if closed)' })
   @ApiQuery({ name: 'storeId', required: false })
   get(@Param('id', ParseUUIDPipe) id: string, @Query('storeId') storeId: string, @CurrentUser() user: any) {

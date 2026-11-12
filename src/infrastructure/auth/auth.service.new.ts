@@ -1,3 +1,4 @@
+import { AuditLogService } from '../../audit-log/audit-log.service';
 import { Injectable, UnauthorizedException, BadRequestException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -17,6 +18,7 @@ export class AuthService {
     private restaurantRepository: Repository<Restaurant>,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private audit: AuditLogService,
   ) { }
 
   async validateUser(email: string, password: string): Promise<any> {
@@ -56,14 +58,17 @@ export class AuthService {
     const user = await this.validateUser(loginDto.email, loginDto.password);
 
     if (!user) {
+      // Only logged when the account exists: the log belongs to that person's company.
+      const known = await this.userRepository.findOne({ where: { email: loginDto.email.toLowerCase() }, select: ['id', 'name', 'email', 'role', 'tenantId', 'restaurantId'] });
+      if (known) await this.audit.record({ actor: known, storeId: known.restaurantId ?? null, action: 'auth.login_failed', entityType: 'user', entityId: known.id, summary: `Wrong password for ${known.email ?? loginDto.email.toLowerCase()}` });
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    return this.finishLogin(user);
+    return this.finishLogin(user, `Signed in with email (${user.email})`);
   }
 
   /** Everything after the credentials are known to be right: account checks, last-login stamp and tokens. */
-  private async finishLogin(user: any): Promise<AuthResponseDto> {
+  private async finishLogin(user: any, how: string): Promise<AuthResponseDto> {
     if (user.status !== UserStatus.ACTIVE) {
       throw new UnauthorizedException('Account is not active');
     }
@@ -86,6 +91,7 @@ export class AuthService {
 
     // Update last login
     await this.userRepository.update(user.id, { lastLoginAt: new Date() });
+    await this.audit.record({ actor: user, storeId: user.restaurantId ?? null, action: 'auth.login', entityType: 'user', entityId: user.id, summary: how });
 
     const tokens = await this.generateTokens(user);
 
@@ -121,6 +127,13 @@ export class AuthService {
     if (!user || !user.pinHash || !ok || user.role === UserRole.SUPER_ADMIN) {
       const count = (f && f.lockedUntil <= Date.now() ? f.count : 0) + 1;
       this.pinFailures.set(key, { count, lockedUntil: count >= 5 ? Date.now() + 5 * 60 * 1000 : 0 });
+      await this.audit.record({
+        actor: user && user.role !== UserRole.SUPER_ADMIN ? user : null,
+        tenantId: dto.tenantId,
+        storeId: user?.restaurantId ?? null,
+        action: 'auth.login_failed',
+        summary: `Wrong till PIN for employee number ${dto.employeeNumber}${count >= 5 ? '; locked for 5 minutes' : ''}`,
+      });
       throw new UnauthorizedException('Invalid employee number or PIN');
     }
     this.pinFailures.delete(key);
@@ -128,7 +141,7 @@ export class AuthService {
       user.restaurant = await this.restaurantRepository.findOne({ where: { tenantId: user.tenantId }, order: { createdAt: 'ASC' } as any });
     }
     const { password: _pw, ...result } = user as any;
-    return this.finishLogin(result);
+    return this.finishLogin(result, `Signed in at the till with employee number ${dto.employeeNumber}`);
   }
 
   async register(registerDto: RegisterDto): Promise<AuthResponseDto> {

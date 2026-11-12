@@ -67,4 +67,10 @@ export class CreateRefundDto {
   @ValidateNested({ each: true })
   @Type(() => RefundPaymentInputDto)
   payments: RefundPaymentInputDto[];
+
+  @ApiPropertyOptional({ description: "Token from a manager's PIN, when the company says this role's refunds need one" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  approvalToken?: string;
 }

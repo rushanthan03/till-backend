@@ -3,6 +3,7 @@ import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../infrastructure/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../infrastructure/auth/guards/roles.guard';
 import { Roles } from '../infrastructure/auth/decorators/roles.decorator';
+import { NeedsPermission } from '../permissions/permissions.decorator';
 import { CurrentUser } from '../infrastructure/auth/decorators/current-user.decorator';
 import { resolveStoreId } from '../infrastructure/auth/store-scope';
 import { UserRole } from '../infrastructure/database/entities';
@@ -24,11 +25,12 @@ export class SalesController {
   @ApiOperation({ summary: 'Complete a till sale (prices, VAT and stock are calculated server-side)' })
   @ApiQuery({ name: 'storeId', required: false })
   create(@Body() dto: CreateSaleDto, @Query('storeId') storeId: string, @CurrentUser() user: any) {
-    return this.salesService.create(resolveStoreId(storeId, user), { id: user.id, name: user.name, role: user.role }, dto);
+    return this.salesService.create(resolveStoreId(storeId, user), { id: user.id, name: user.name, role: user.role, tenantId: user.tenantId }, dto);
   }
 
   @Get()
-  @Roles(...REPORT_ROLES)
+  @Roles(...SELL_ROLES)
+  @NeedsPermission('reports', 'refunds')
   @ApiOperation({ summary: 'Sales history (managers and above): filter by receipt, cashier, status, payment method and dates' })
   list(@Query() query: ListSalesQueryDto, @CurrentUser() user: any) {
     return this.salesService.findAll(resolveStoreId(query.storeId, user), query);
@@ -36,6 +38,7 @@ export class SalesController {
 
   @Get('summary')
   @Roles(...REPORT_ROLES)
+  @NeedsPermission('reports')
   @ApiOperation({ summary: 'Sales totals for a period (default today)' })
   @ApiQuery({ name: 'storeId', required: false })
   @ApiQuery({ name: 'from', required: false })
@@ -52,7 +55,8 @@ export class SalesController {
   }
 
   @Get(':id')
-  @Roles(...REPORT_ROLES)
+  @Roles(...SELL_ROLES)
+  @NeedsPermission('reports', 'refunds')
   @ApiOperation({ summary: 'One sale with its lines, payments and refunds' })
   @ApiQuery({ name: 'storeId', required: false })
   get(@Param('id', ParseUUIDPipe) id: string, @Query('storeId') storeId: string, @CurrentUser() user: any) {

@@ -40,6 +40,7 @@ import { ReconcileEntitySchema1794223900000 } from './1794223900000-ReconcileEnt
 import { ProductBarcodes1794224000000 } from './1794224000000-ProductBarcodes';
 import { SuppliersAndPurchaseOrders1794224100000 } from './1794224100000-SuppliersAndPurchaseOrders';
 import { LoyaltyRedemption1794224200000 } from './1794224200000-LoyaltyRedemption';
+import { AuditLogAndPermissions1794224300000 } from './1794224300000-AuditLogAndPermissions';
 
 export const MIGRATIONS = [
   InitialSchema1660000000000,
@@ -84,6 +85,7 @@ export const MIGRATIONS = [
   ProductBarcodes1794224000000,
   SuppliersAndPurchaseOrders1794224100000,
   LoyaltyRedemption1794224200000,
+  AuditLogAndPermissions1794224300000,
 ];
 
 

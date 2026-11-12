@@ -1,11 +1,14 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { Shift, ShiftStatus } from '../infrastructure/database/entities/shift.entity';
 import { Sale, SalePayment, SaleStatus } from '../infrastructure/database/entities/sale.entity';
 import { CashMovement, CashMovementType } from '../infrastructure/database/entities/cash-movement.entity';
 import { UserRole } from '../infrastructure/database/entities';
-import { ApprovalsService, APPROVER_ROLES } from '../approvals/approvals.service';
+import { ApprovalsService } from '../approvals/approvals.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
+
+const MOVEMENT_WORDS: Record<string, string> = { paid_in: 'Paid in', paid_out: 'Paid out', safe_drop: 'Safe drop' };
 import { Refund, RefundPayment } from '../infrastructure/database/entities/refund.entity';
 import { round2 } from '../sales/sale-calculations';
 import { cashVariance, expectedCash, varianceNeedsNote, VARIANCE_NOTE_THRESHOLD } from './shift-calculations';
@@ -38,6 +41,7 @@ export class ShiftsService {
     @InjectRepository(Shift) private readonly shiftRepository: Repository<Shift>,
     @InjectRepository(CashMovement) private readonly movementRepository: Repository<CashMovement>,
     private readonly approvals: ApprovalsService,
+    private readonly audit: AuditLogService,
   ) {}
 
   findOpen(storeId: string, userId: string): Promise<Shift | null> {
@@ -49,7 +53,7 @@ export class ShiftsService {
       throw new ConflictException('You already have an open till session');
     }
     try {
-      return await this.shiftRepository.save(
+      const shift = await this.shiftRepository.save(
         this.shiftRepository.create({
           storeId,
           userId: user.id,
@@ -59,6 +63,8 @@ export class ShiftsService {
           status: ShiftStatus.OPEN,
         }),
       );
+      await this.audit.record({ actor: user, storeId, action: 'shift.open', entityType: 'shift', entityId: shift.id, summary: `Opened the till with a £${Number(dto.openingFloat).toFixed(2)} float` });
+      return shift;
     } catch (error: any) {
       // Two tabs opening at the same instant: the unique index lets only one win.
       if (error?.code === '23505') throw new ConflictException('You already have an open till session');
@@ -146,7 +152,7 @@ export class ShiftsService {
    * Records cash going in or out of the drawer, or a no-sale drawer opening. Paid-outs need a manager's
    * approval from a cashier; money leaving the drawer can never exceed the cash that should be in it.
    */
-  async addMovement(storeId: string, user: { id: string; name: string; role?: UserRole }, dto: CashMovementDto): Promise<CashMovement> {
+  async addMovement(storeId: string, user: { id: string; name: string; role?: UserRole; tenantId?: string | null }, dto: CashMovementDto): Promise<CashMovement> {
     const shift = await this.requireOpen(storeId, user.id);
     const isNoSale = dto.type === CashMovementType.NO_SALE;
     const amount = isNoSale ? 0 : dto.amount;
@@ -154,13 +160,11 @@ export class ShiftsService {
     const reason = dto.reason?.trim();
     if (!reason) throw new BadRequestException('A reason is required');
 
+    // Paid outs and no-sale openings follow the company's permissions (allowed / manager PIN / not allowed).
     let approver: { approverId: string; approverName: string } | null = null;
-    if (dto.type === CashMovementType.PAID_OUT) {
-      if (user.role && APPROVER_ROLES.includes(user.role)) approver = { approverId: user.id, approverName: user.name };
-      else {
-        if (!dto.approvalToken) throw new ForbiddenException('Manager approval is required for a paid out');
-        approver = await this.approvals.verifyToken(dto.approvalToken, storeId);
-      }
+    if (dto.type === CashMovementType.PAID_OUT || isNoSale) {
+      const a = await this.approvals.authorise(storeId, user, isNoSale ? 'noSale' : 'paidOut', dto.approvalToken);
+      if (a.approverId !== user.id || dto.type === CashMovementType.PAID_OUT) approver = a;
     }
 
     if (dto.type === CashMovementType.PAID_OUT || dto.type === CashMovementType.SAFE_DROP) {
@@ -169,7 +173,7 @@ export class ShiftsService {
       if (amount! > inDrawer) throw new BadRequestException(`Only ${inDrawer.toFixed(2)} should be in the drawer`);
     }
 
-    return this.movementRepository.save(
+    const saved = await this.movementRepository.save(
       this.movementRepository.create({
         storeId,
         shiftId: shift.id,
@@ -182,6 +186,18 @@ export class ShiftsService {
         approvedByName: approver?.approverName ?? null,
       }),
     );
+    const by = approver && approver.approverId !== user.id ? `, approved by ${approver.approverName}` : '';
+    const what = isNoSale ? 'Opened the drawer (no sale)' : `${MOVEMENT_WORDS[dto.type] ?? dto.type} £${Number(amount).toFixed(2)}`;
+    await this.audit.record({
+      actor: user,
+      storeId,
+      action: `drawer.${dto.type}`,
+      entityType: 'cash_movement',
+      entityId: saved.id,
+      summary: `${what}: ${reason}${by}`,
+      details: { amount: amount ?? 0, reason, approvedBy: approver?.approverName ?? null },
+    });
+    return saved;
   }
 
   movements(shiftId: string, storeId: string): Promise<CashMovement[]> {
@@ -261,7 +277,7 @@ export class ShiftsService {
   }
 
   async close(storeId: string, userId: string, dto: CloseShiftDto): Promise<Shift> {
-    return this.dataSource.transaction(async (manager) => {
+    const closed = await this.dataSource.transaction(async (manager) => {
       const shift = await manager.findOne(Shift, {
         where: { storeId, userId, status: ShiftStatus.OPEN },
         lock: { mode: 'pessimistic_write' },
@@ -298,6 +314,17 @@ export class ShiftsService {
       });
       return manager.save(Shift, shift);
     });
+    const v = Number(closed.variance);
+    await this.audit.record({
+      actor: { id: userId },
+      storeId,
+      action: 'shift.close',
+      entityType: 'shift',
+      entityId: closed.id,
+      summary: `Closed the till: counted £${Number(closed.countedCash).toFixed(2)}, expected £${Number(closed.expectedCash).toFixed(2)}${v === 0 ? ', no difference' : `, ${v > 0 ? 'over' : 'short'} by £${Math.abs(v).toFixed(2)}`}${closed.closeNote ? ` (${closed.closeNote})` : ''}`,
+      details: { countedCash: Number(closed.countedCash), expectedCash: Number(closed.expectedCash), variance: v, note: closed.closeNote },
+    });
+    return closed;
   }
 
   /** Shared by the list and the summary so the tiles always match the table. */

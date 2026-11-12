@@ -1,13 +1,19 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, ForbiddenException, Logger, Optional } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { UserRole } from '../../database/entities';
+import { PermissionsService } from '../../../permissions/permissions.service';
+import { PERMISSIONS_KEY } from '../../../permissions/permissions.decorator';
+import { PermissionKey, permissionLabel } from '../../../permissions/permissions';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
   private readonly logger = new Logger(RolesGuard.name);
-  constructor(private reflector: Reflector) {}
+  constructor(
+    private reflector: Reflector,
+    @Optional() private readonly permissions?: PermissionsService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     // Check if route is public
     const isPublic = this.reflector.getAllAndOverride<boolean>('isPublic', [
       context.getHandler(),
@@ -43,6 +49,16 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('Insufficient permissions');
     }
 
+    // The company can take actions away from managers and cashiers (see PermissionsService).
+    const needed = this.reflector.getAllAndOverride<PermissionKey[]>(PERMISSIONS_KEY, [context.getHandler(), context.getClass()]);
+    if (needed?.length) {
+      if (!this.permissions) throw new ForbiddenException('Permissions are not available');
+      const levels = await Promise.all(needed.map((k) => this.permissions!.level(user, k)));
+      if (levels.every((l) => l === 'no')) {
+        throw new ForbiddenException(`Your role is not allowed to use ${permissionLabel(needed[0]).toLowerCase()}`);
+      }
+    }
+
     return true;
   }
 
@@ -59,10 +75,6 @@ export class RolesGuard implements CanActivate {
 
     if (Array.isArray(user.roles)) {
       user.roles.forEach(push);
-    }
-
-    if (Array.isArray(user.permissions)) {
-      user.permissions.forEach(push);
     }
 
     if (user.role?.name) {

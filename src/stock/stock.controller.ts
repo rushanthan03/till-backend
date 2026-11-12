@@ -3,6 +3,7 @@ import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../infrastructure/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../infrastructure/auth/guards/roles.guard';
 import { Roles } from '../infrastructure/auth/decorators/roles.decorator';
+import { NeedsPermission } from '../permissions/permissions.decorator';
 import { CurrentUser } from '../infrastructure/auth/decorators/current-user.decorator';
 import { resolveStoreId } from '../infrastructure/auth/store-scope';
 import { UserRole } from '../infrastructure/database/entities';
@@ -15,6 +16,7 @@ const MANAGERS = [UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER]
 @Controller('stock')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(...MANAGERS)
+@NeedsPermission('stock')
 export class StockController {
   constructor(private readonly stock: StockService) {}
 

@@ -3,6 +3,7 @@ import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../infrastructure/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../infrastructure/auth/guards/roles.guard';
 import { Roles } from '../infrastructure/auth/decorators/roles.decorator';
+import { NeedsPermission } from '../permissions/permissions.decorator';
 import { CurrentUser } from '../infrastructure/auth/decorators/current-user.decorator';
 import { resolveStoreId } from '../infrastructure/auth/store-scope';
 import { UserRole } from '../infrastructure/database/entities';
@@ -44,6 +45,7 @@ export class AttendanceController {
 
   @Get()
   @Roles(...MANAGERS)
+  @NeedsPermission('staff')
   @ApiOperation({ summary: 'Hours worked per person and every clock entry (managers)' })
   report(@Query() q: AttendanceQueryDto, @CurrentUser() user: any) {
     return this.attendance.report(resolveStoreId(q.storeId, user), q);

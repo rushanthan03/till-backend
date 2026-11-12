@@ -15,6 +15,8 @@ import { round2, round3 } from '../sales/sale-calculations';
 import { allocateRefundPayments, calcRefundLines, formatRefundNumber, pointsDiscountBack, sumRefund } from './refund-calculations';
 import { pointsFor } from '../customers/loyalty';
 import { CreateRefundDto } from './dto/refund.dto';
+import { ApprovalsService } from '../approvals/approvals.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 @Injectable()
 export class RefundsService {
@@ -22,17 +24,21 @@ export class RefundsService {
     private readonly dataSource: DataSource,
     @InjectRepository(Refund) private readonly refundRepository: Repository<Refund>,
     private readonly cardPayments: PaymentsService,
+    private readonly approvals: ApprovalsService,
+    private readonly audit: AuditLogService,
   ) {}
 
   /**
    * Refunds part or all of a sale. Everything happens in one transaction with the sale row
    * locked, so two tills can never refund the same item twice.
    */
-  async create(storeId: string, user: { id?: string; name?: string }, dto: CreateRefundDto): Promise<Refund> {
+  async create(storeId: string, user: { id: string; name?: string; role?: string; tenantId?: string | null }, dto: CreateRefundDto): Promise<Refund> {
+    // Checked before anything happens, card refunds included.
+    const approver = await this.approvals.authorise(storeId, user, 'refunds', dto.approvalToken);
     const MAX_ATTEMPTS = 3;
     for (let attempt = 1; ; attempt++) {
       try {
-        return await this.dataSource.transaction(async (manager) => {
+        const done = await this.dataSource.transaction(async (manager) => {
           const shift = await manager.findOne(Shift, { where: { storeId, userId: user.id, status: ShiftStatus.OPEN } });
           if (!shift) throw new ConflictException('Open the till before processing a refund');
 
@@ -135,6 +141,8 @@ export class RefundsService {
             shiftId: shift.id,
             processedById: user.id ?? null,
             processedByName: user.name ?? null,
+            approvedById: approver.approverId,
+            approvedByName: approver.approverName || null,
             reason: dto.reason,
             note: dto.note?.trim() || null,
             total: totals.total,
@@ -158,6 +166,17 @@ export class RefundsService {
           await recordStockMovements(manager, restocked.map((e) => ({ ...e, reference: savedRefund.refundNumber })));
           return savedRefund;
         });
+        const methods = (done.payments ?? []).map((p) => `${p.method} £${Number(p.amount).toFixed(2)}`).join(', ');
+        await this.audit.record({
+          actor: user,
+          storeId,
+          action: 'refund',
+          entityType: 'refund',
+          entityId: done.id,
+          summary: `Refund ${done.refundNumber} of £${Number(done.total).toFixed(2)} on receipt ${done.originalReceiptNumber}${methods ? ` (${methods})` : ''}${approver.approverId !== user.id ? `, approved by ${approver.approverName}` : ''}`,
+          details: { refundNumber: done.refundNumber, receiptNumber: done.originalReceiptNumber, total: Number(done.total), reason: done.reason, note: done.note, approvedBy: approver.approverName, pointsReturned: done.pointsReturned, items: done.items?.map((i) => ({ name: i.name, quantity: Number(i.quantity), lineTotal: Number(i.lineTotal), disposition: i.disposition })) },
+        });
+        return done;
       } catch (error: any) {
         const isNumberClash = error?.code === '23505' && String(error?.detail ?? '').includes('refundSeq');
         if (isNumberClash && attempt < MAX_ATTEMPTS) continue;

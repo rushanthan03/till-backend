@@ -3,6 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../infrastructure/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../infrastructure/auth/guards/roles.guard';
 import { Roles } from '../infrastructure/auth/decorators/roles.decorator';
+import { NeedsPermission } from '../permissions/permissions.decorator';
 import { CurrentUser } from '../infrastructure/auth/decorators/current-user.decorator';
 import { resolveStoreId } from '../infrastructure/auth/store-scope';
 import { UserRole } from '../infrastructure/database/entities';
@@ -13,6 +14,7 @@ import { ProductReportQueryDto, ReportQueryDto } from './dto/report.dto';
 @Controller('reports')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER)
+@NeedsPermission('reports')
 export class ReportsController {
   constructor(private readonly reports: ReportsService) {}
 

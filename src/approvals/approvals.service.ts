@@ -4,6 +4,9 @@ import { JwtService } from '@nestjs/jwt';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User, UserRole, UserStatus } from '../infrastructure/database/entities';
+import { PermissionsService } from '../permissions/permissions.service';
+import { PermissionKey, permissionLabel } from '../permissions/permissions';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 export const APPROVER_ROLES = [UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER];
 const TOKEN_PURPOSE = 'till-approval';
@@ -15,6 +18,21 @@ export interface Approval {
   approverId: string;
   approverName: string;
 }
+
+/** The person asking, as the controllers pass it. */
+export interface Requester {
+  id: string;
+  name?: string;
+  role?: UserRole | string;
+  tenantId?: string | null;
+}
+
+const NEEDS_APPROVAL: Record<PermissionKey, string> = {
+  discounts: 'Manager approval is required for discounts and price overrides',
+  refunds: 'Manager approval is required for a refund',
+  paidOut: 'Manager approval is required for a paid out',
+  noSale: 'Manager approval is required to open the drawer',
+} as Record<PermissionKey, string>;
 
 /**
  * Manager approval for sensitive till actions (discounts, price overrides).
@@ -30,13 +48,29 @@ export class ApprovalsService {
   constructor(
     @InjectRepository(User) private readonly users: Repository<User>,
     private readonly jwt: JwtService,
+    private readonly permissions: PermissionsService,
+    private readonly audit: AuditLogService,
   ) {}
+
+  /**
+   * May this person do a till action? Uses the company's permissions:
+   * allowed → they approve it themselves; needs PIN → the approval token from a manager's PIN; not allowed → refused.
+   * Returns who approved (recorded on the sale, refund or drawer movement).
+   */
+  async authorise(storeId: string, user: Requester, key: PermissionKey, approvalToken?: string): Promise<Approval> {
+    const level = await this.permissions.level({ role: user.role, tenantId: user.tenantId }, key);
+    if (level === 'yes') return { approverId: user.id, approverName: user.name ?? '' };
+    if (level === 'no') throw new ForbiddenException(`Your role is not allowed to do this: ${permissionLabel(key).toLowerCase()}`);
+    if (!approvalToken) throw new ForbiddenException(NEEDS_APPROVAL[key] ?? 'Manager approval is required');
+    return this.verifyToken(approvalToken, storeId, key);
+  }
 
   async setPin(userId: string, pin: string): Promise<{ message: string }> {
     const me = await this.users.findOne({ where: { id: userId } });
     if (!me || !APPROVER_ROLES.includes(me.role)) throw new ForbiddenException('Only managers and admins have an approval PIN');
     await this.assertPinFree(me, pin);
     await this.users.update(me.id, { pinHash: await bcrypt.hash(pin, 10) });
+    await this.audit.record({ actor: me, storeId: me.restaurantId ?? null, action: 'staff.approval_pin', entityType: 'user', entityId: me.id, summary: `${me.name} changed their manager approval PIN` });
     return { message: 'PIN saved' };
   }
 
@@ -69,10 +103,19 @@ export class ApprovalsService {
     }
     if (!target.employeeNumber && target.pinHash) throw new BadRequestException('Give this person an employee number too');
     await this.users.save(target);
+    const changed = [dto.employeeNumber !== undefined && `employee number ${target.employeeNumber}`, dto.pin !== undefined && 'till PIN'].filter(Boolean).join(' and ');
+    await this.audit.record({
+      actor: { id: actor.id, role: actor.role, tenantId: actor.tenantId },
+      storeId: target.restaurantId ?? null,
+      action: 'staff.till_login',
+      entityType: 'user',
+      entityId: target.id,
+      summary: `Set ${changed || 'till sign-in'} for ${target.name}`,
+    });
     return { id: target.id, name: target.name, employeeNumber: target.employeeNumber, hasPin: !!target.pinHash };
   }
 
-  async verifyPin(storeId: string, requester: { id: string; tenantId?: string }, pin: string) {
+  async verifyPin(storeId: string, requester: { id: string; name?: string; role?: string; tenantId?: string }, pin: string) {
     const f = this.failures.get(requester.id);
     if (f && f.lockedUntil > Date.now()) {
       throw new ForbiddenException('Too many wrong PIN attempts. Try again in a few minutes.');
@@ -90,6 +133,13 @@ export class ApprovalsService {
     if (!approver) {
       const count = (f && f.lockedUntil <= Date.now() ? f.count : 0) + 1;
       this.failures.set(requester.id, { count, lockedUntil: count >= MAX_FAILURES ? Date.now() + LOCK_MS : 0 });
+      await this.audit.record({
+        actor: requester,
+        storeId,
+        action: 'auth.manager_pin_failed',
+        summary: count >= MAX_FAILURES ? `Wrong manager PIN entered ${count} times; PIN entry locked for 5 minutes` : 'Wrong manager PIN entered',
+        details: { attempts: count },
+      });
       // 403, not 401: the app treats 401 as an expired login and would sign the cashier out
       throw new ForbiddenException('Incorrect manager PIN');
     }
@@ -102,8 +152,11 @@ export class ApprovalsService {
     return { approvalToken, approver: { id: approver.id, name: approver.name }, expiresInSeconds: 300 };
   }
 
-  /** Checks a token from the till and returns who approved. Throws when invalid, expired or for another store. */
-  async verifyToken(token: string, storeId: string): Promise<Approval> {
+  /**
+   * Checks a token from the till and returns who approved. Throws when invalid, expired or for another store,
+   * or when the approver's own role isn't allowed to do `key`.
+   */
+  async verifyToken(token: string, storeId: string, key?: PermissionKey): Promise<Approval> {
     let payload: any;
     try {
       payload = this.jwt.verify(token);
@@ -116,6 +169,9 @@ export class ApprovalsService {
     const approver = await this.users.findOne({ where: { id: payload.sub } });
     if (!approver || approver.status !== UserStatus.ACTIVE || !APPROVER_ROLES.includes(approver.role)) {
       throw new ForbiddenException('The approving manager is no longer active');
+    }
+    if (key && (await this.permissions.level(approver, key)) !== 'yes') {
+      throw new ForbiddenException(`${approver.name} is not allowed to approve this: ${permissionLabel(key).toLowerCase()}`);
     }
     return { approverId: approver.id, approverName: approver.name };
   }

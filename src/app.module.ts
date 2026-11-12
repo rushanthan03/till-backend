@@ -53,6 +53,8 @@ import { ApprovalsModule } from './approvals/approvals.module';
 import { ShiftsModule } from './shifts/shifts.module';
 import { RefundsModule } from './refunds/refunds.module';
 import { PurchasingModule } from './purchasing/purchasing.module';
+import { PermissionsModule } from './permissions/permissions.module';
+import { AuditLog } from './infrastructure/database/entities/audit-log.entity';
 import { MIGRATIONS } from './infrastructure/database/migrations';
 
 @Module({
@@ -116,6 +118,7 @@ import { MIGRATIONS } from './infrastructure/database/migrations';
           Refund,
           RefundItem,
           RefundPayment,
+          AuditLog,
         ],
         synchronize: configService.get<string>('NODE_ENV') === 'development',
         migrations: MIGRATIONS,
@@ -131,6 +134,7 @@ import { MIGRATIONS } from './infrastructure/database/migrations';
       Restaurant,
       User,
       ]),
+    PermissionsModule,
     AuthModule,
     TenantModule,
     UserManagementModule,

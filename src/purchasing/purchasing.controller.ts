@@ -1,8 +1,10 @@
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../infrastructure/auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../infrastructure/auth/guards/roles.guard';
 import { Roles } from '../infrastructure/auth/decorators/roles.decorator';
+import { NeedsPermission } from '../permissions/permissions.decorator';
 import { CurrentUser } from '../infrastructure/auth/decorators/current-user.decorator';
 import { resolveStoreId } from '../infrastructure/auth/store-scope';
 import { UserRole } from '../infrastructure/database/entities';
@@ -18,6 +20,7 @@ const actor = (user: any) => ({ id: user.id, name: user.name });
 @Controller('suppliers')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(...MANAGERS)
+@NeedsPermission('purchasing')
 export class SuppliersController {
   constructor(private readonly purchasing: PurchasingService) {}
 
@@ -52,8 +55,12 @@ export class SuppliersController {
 @Controller('purchase-orders')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(...MANAGERS)
+@NeedsPermission('purchasing')
 export class PurchaseOrdersController {
-  constructor(private readonly purchasing: PurchasingService) {}
+  constructor(
+    private readonly purchasing: PurchasingService,
+    private readonly audit: AuditLogService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: "This store's purchase orders" })
@@ -91,23 +98,33 @@ export class PurchaseOrdersController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Mark a draft as ordered (sent to the supplier)' })
   @ApiQuery({ name: 'storeId', required: false })
-  submit(@Param('id', ParseUUIDPipe) id: string, @Query('storeId') storeId: string, @CurrentUser() user: any) {
-    return this.purchasing.submitOrder(id, resolveStoreId(storeId, user));
+  async submit(@Param('id', ParseUUIDPipe) id: string, @Query('storeId') storeId: string, @CurrentUser() user: any) {
+    const sid = resolveStoreId(storeId, user);
+    const o: any = await this.purchasing.submitOrder(id, sid);
+    await this.audit.record({ actor: user, storeId: sid, action: 'purchasing.order', entityType: 'purchase_order', entityId: id, summary: `Marked ${o.number} as ordered${o.supplier?.name ? ` from ${o.supplier.name}` : ''} (£${Number(o.totalCost ?? 0).toFixed(2)})` });
+    return o;
   }
 
   @Post(':id/cancel')
   @HttpCode(200)
   @ApiOperation({ summary: 'Cancel a draft or open order (on a part-delivered order, cancels the rest)' })
   @ApiQuery({ name: 'storeId', required: false })
-  cancel(@Param('id', ParseUUIDPipe) id: string, @Query('storeId') storeId: string, @CurrentUser() user: any) {
-    return this.purchasing.cancelOrder(id, resolveStoreId(storeId, user));
+  async cancel(@Param('id', ParseUUIDPipe) id: string, @Query('storeId') storeId: string, @CurrentUser() user: any) {
+    const sid = resolveStoreId(storeId, user);
+    const o: any = await this.purchasing.cancelOrder(id, sid);
+    await this.audit.record({ actor: user, storeId: sid, action: 'purchasing.cancel', entityType: 'purchase_order', entityId: id, summary: `Cancelled ${o.number}${o.supplier?.name ? ` (${o.supplier.name})` : ''}` });
+    return o;
   }
 
   @Post(':id/receive')
   @HttpCode(200)
   @ApiOperation({ summary: 'Book a delivery against the order: raises stock and records goods-in' })
   @ApiQuery({ name: 'storeId', required: false })
-  receive(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReceivePurchaseOrderDto, @Query('storeId') storeId: string, @CurrentUser() user: any) {
-    return this.purchasing.receiveOrder(id, resolveStoreId(storeId, user), actor(user), dto);
+  async receive(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReceivePurchaseOrderDto, @Query('storeId') storeId: string, @CurrentUser() user: any) {
+    const sid = resolveStoreId(storeId, user);
+    const r = await this.purchasing.receiveOrder(id, sid, actor(user), dto);
+    const o: any = r.order;
+    await this.audit.record({ actor: user, storeId: sid, action: 'purchasing.receive', entityType: 'purchase_order', entityId: id, summary: `Received delivery on ${o.number}${dto.deliveryNote ? ` (${dto.deliveryNote})` : ''}: ${r.units} units, £${Number(r.cost).toFixed(2)}${r.status === 'received' ? ', order complete' : ''}` });
+    return r;
   }
 }

@@ -127,6 +127,6 @@ export class CustomersService {
     await this.sales.update({ customerId: id }, { customerName: null });
     Object.assign(c, { name: 'Erased customer', phone: null, email: null, marketingConsent: false, isActive: false, pointsBalance: 0 });
     await this.repo.save(c);
-    return { id, erased: true };
+    return { id, erased: true, cardNumber: c.cardNumber };
   }
 }
