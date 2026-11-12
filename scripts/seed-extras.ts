@@ -6,27 +6,36 @@
  *   - attendance: clock in/out for every demo till session and a manager's day
  *   - pack barcodes: six-packs, cases and boxes (codes 9900…) that add several units per scan
  *   - suppliers (each product gets its usual supplier) and purchase orders: a draft, one on order and one running late
+ *   - an audit log matching all of the above: sign-ins, till sessions, drawer use, refunds, deliveries, price and offer changes,
+ *     plus a few wrong PINs
  *
  *   npm run seed:extras            adds it once (needs seed:demo and seed:history first)
  *   npm run seed:extras -- --reset removes the earlier extras and rebuilds them
  *
  * Everything is tagged ("DEMO-" stock references, "[demo history]" attendance notes, @demo.customers.test emails,
- * named offers, C0000nnnn card numbers, 9900… pack barcodes, suppliers noted "[demo history]"), so only demo data is ever removed.
+ * named offers, C0000nnnn card numbers, 9900… pack barcodes, suppliers noted "[demo history]", audit entries with details.demo),
+ * so only demo data is ever removed.
  */
 import 'reflect-metadata';
 import { In, Like } from 'typeorm';
 import { AppDataSource } from '../src/infrastructure/database/data-source';
 import {
-  Customer, Product, ProductBarcode, Promotion, PurchaseOrder, PurchaseOrderLine, PurchaseOrderStatus, Supplier, PromotionScope, PromotionType, Restaurant, Sale, Shift, StockMovement, StockMovementType, Tenant, TimeEntry, User, UserRole,
+  CashMovement, Customer, Product, ProductBarcode, Promotion, Refund, PurchaseOrder, PurchaseOrderLine, PurchaseOrderStatus, Supplier, PromotionScope, PromotionType, Restaurant, Sale, Shift, StockMovement, StockMovementType, Tenant, TimeEntry, User, UserRole,
 } from '../src/infrastructure/database/entities';
 import { round2, round3 } from '../src/sales/sale-calculations';
+import { AuditLog } from '../src/infrastructure/database/entities/audit-log.entity';
 
 const TAG = '[demo history]';
 const EMAIL_DOMAIN = '@demo.customers.test';
 // Demo customers get card numbers C0000nnnn. Real ones are generated from 10000000 up, so this range is never used for a real customer.
 const DEMO_CARD = 'C0000%';
 const DEMO_PACK = '9900%';
-const PROMO_NAMES = ['3 for £5 Muffins', 'Dairy Week: 15% off', 'Fresh Drinks: 3 for £4', 'Summer BBQ: 20% off Meat & Fish', 'Bank Holiday Bakery: 10% off'];
+// Demo offers are found by name. Multibuy names carry the price (worked out from the shelf price), so they are matched with LIKE.
+const PROMO_NAMES = ['Muffins: 3 for £%', 'Dairy Week: 15% off', 'Fresh Drinks: 3 for £%', 'Summer BBQ: 20% off Meat & Fish', 'Bank Holiday Bakery: 10% off', 'Shower Gel: buy 1 get 1 free', 'Crisps: buy 2 get 1 free'];
+// Names used by earlier versions of this script, removed on --reset too.
+const OLD_PROMO_NAMES = ['3 for £5 Muffins', 'Fresh Drinks: 3 for £4'];
+/** Bundle price at least 15% under shelf price, rounded down to 50p so it reads well ("3 for £4.50"). */
+const bundleFor = (price: number, qty: number) => Math.floor(price * qty * 0.85 * 2) / 2;
 const SUPPLIERS = ['Booker Wholesale', 'Bidfood', 'Fresh Direct', 'Brakes', 'Park Cakes Ltd'];
 
 let seed = 7771;
@@ -61,7 +70,9 @@ async function main() {
     const demoCustomers = await customers.find({ where: { cardNumber: Like(DEMO_CARD) }, select: ['id'] });
     if (demoCustomers.length) await sales.update({ customerId: In(demoCustomers.map((c) => c.id)) }, { customerId: null, customerName: null, pointsEarned: 0 });
     await customers.delete({ cardNumber: Like(DEMO_CARD) });
-    await ds.getRepository(Promotion).delete({ name: In(PROMO_NAMES) });
+    const demoStoreIds = stores.map((x) => x.id);
+    for (const n of [...PROMO_NAMES, ...OLD_PROMO_NAMES]) await ds.getRepository(Promotion).delete({ storeId: In(demoStoreIds), name: Like(n) });
+    await ds.query(`DELETE FROM audit_logs WHERE "tenantId" = $1 AND details->>'demo' = 'true'`, [tenant.id]);
     await ds.getRepository(TimeEntry).delete({ note: TAG });
     await ds.getRepository(ProductBarcode).delete({ barcode: Like(DEMO_PACK) });
     const demoSuppliers = await ds.getRepository(Supplier).find({ where: { tenantId: tenant.id, notes: TAG } });
@@ -120,16 +131,22 @@ async function main() {
   const day = 86400000;
   for (const store of stores) {
     const ps = await products.find({ where: { storeId: store.id, isActive: true } });
-    const muffin = ps.find((p) => p.name === 'Chocolate Muffin 2 Pack');
-    const drink = ps.find((p) => p.department === 'Drinks' && p.unitType === 'each');
+    const byName = (n: string) => ps.find((p) => p.name === n);
+    const muffin = byName('Chocolate Muffin 2 Pack');
+    const drink = byName('Orange Juice 1L') ?? ps.find((p) => p.department === 'Drinks' && p.unitType === 'each');
+    const gel = byName('Shower Gel 250ml');
+    const crisps = byName('Ready Salted Crisps 6 Pack');
     const offer = (o: Partial<Promotion>) => ds.getRepository(Promotion).save(ds.getRepository(Promotion).create({ storeId: store.id, isActive: true, startsAt: null, endsAt: null, ...o } as any));
-    if (muffin) await offer({ name: PROMO_NAMES[0], type: PromotionType.MULTIBUY, scope: PromotionScope.PRODUCT, productId: muffin.id, buyQty: 3, bundlePrice: round2(muffin.price * 3 * 0.8) });
-    await offer({ name: PROMO_NAMES[1], type: PromotionType.PERCENT_OFF, scope: PromotionScope.DEPARTMENT, department: 'Dairy & Eggs', percentOff: 15, startsAt: new Date(Date.now() - 2 * day), endsAt: new Date(Date.now() + 5 * day) });
-    if (drink) await offer({ name: PROMO_NAMES[2], type: PromotionType.MULTIBUY, scope: PromotionScope.PRODUCT, productId: drink.id, buyQty: 3, bundlePrice: round2(drink.price * 3 * 0.85) });
-    await offer({ name: PROMO_NAMES[3], type: PromotionType.PERCENT_OFF, scope: PromotionScope.DEPARTMENT, department: 'Meat & Fish', percentOff: 20, startsAt: new Date(Date.now() + 14 * day), endsAt: new Date(Date.now() + 21 * day) });
-    await offer({ name: PROMO_NAMES[4], type: PromotionType.PERCENT_OFF, scope: PromotionScope.DEPARTMENT, department: 'Bakery', percentOff: 10, startsAt: new Date(Date.now() - 10 * day), endsAt: new Date(Date.now() - 3 * day) });
+    const money = (n: number) => `£${n.toFixed(2)}`;
+    if (muffin) { const b = bundleFor(muffin.price, 3); await offer({ name: `Muffins: 3 for ${money(b)}`, type: PromotionType.MULTIBUY, scope: PromotionScope.PRODUCT, productId: muffin.id, buyQty: 3, bundlePrice: b }); }
+    await offer({ name: 'Dairy Week: 15% off', type: PromotionType.PERCENT_OFF, scope: PromotionScope.DEPARTMENT, department: 'Dairy & Eggs', percentOff: 15, startsAt: new Date(Date.now() - 2 * day), endsAt: new Date(Date.now() + 5 * day) });
+    if (drink) { const b = bundleFor(drink.price, 3); await offer({ name: `Fresh Drinks: 3 for ${money(b)}`, type: PromotionType.MULTIBUY, scope: PromotionScope.PRODUCT, productId: drink.id, buyQty: 3, bundlePrice: b }); }
+    if (gel) await offer({ name: 'Shower Gel: buy 1 get 1 free', type: PromotionType.BUY_GET_FREE, scope: PromotionScope.PRODUCT, productId: gel.id, buyQty: 1, freeQty: 1, endsAt: new Date(Date.now() + 10 * day) });
+    if (crisps) await offer({ name: 'Crisps: buy 2 get 1 free', type: PromotionType.BUY_GET_FREE, scope: PromotionScope.PRODUCT, productId: crisps.id, buyQty: 2, freeQty: 1 });
+    await offer({ name: 'Summer BBQ: 20% off Meat & Fish', type: PromotionType.PERCENT_OFF, scope: PromotionScope.DEPARTMENT, department: 'Meat & Fish', percentOff: 20, startsAt: new Date(Date.now() + 14 * day), endsAt: new Date(Date.now() + 21 * day) });
+    await offer({ name: 'Bank Holiday Bakery: 10% off', type: PromotionType.PERCENT_OFF, scope: PromotionScope.DEPARTMENT, department: 'Bakery', percentOff: 10, startsAt: new Date(Date.now() - 10 * day), endsAt: new Date(Date.now() - 3 * day) });
   }
-  console.log('Offers: 5 per store (3 running, 1 scheduled, 1 ended)');
+  console.log('Offers: 7 per store (5 running, including 2 buy-get-free; 1 scheduled; 1 ended)');
 
   // ---------- stock history ----------
   for (const store of stores) {
@@ -272,6 +289,83 @@ async function main() {
   }
   await te.save(entries);
   console.log(`Attendance: ${entries.length} clock entries`);
+
+  // ---------- audit log ----------
+  // Built from the demo rows above, so every entry matches a real till session, refund, delivery or offer.
+  // Tagged details.demo = true so --reset can remove exactly these.
+  const audit = ds.getRepository(AuditLog);
+  const logs: Partial<AuditLog>[] = [];
+  const staffById = new Map((await ds.getRepository(User).find({ where: { tenantId: tenant.id } })).map((u) => [u.id, u]));
+  const gbp = (n: unknown) => `£${Number(n ?? 0).toFixed(2)}`;
+  const log = (at: Date, storeId: string | null, who: User | undefined, action: string, summary: string, entity?: { type: string; id?: string }, details: Record<string, unknown> = {}) => {
+    logs.push({
+      tenantId: tenant.id, storeId, userId: who?.id ?? null, userName: who?.name ?? null, userRole: who?.role ?? null,
+      action, entityType: entity?.type ?? null, entityId: entity?.id ?? null, summary, details: { ...details, demo: true }, createdAt: at,
+    });
+  };
+  const MOVE: Record<string, string> = { paid_in: 'Paid in', paid_out: 'Paid out', safe_drop: 'Safe drop' };
+  const shiftIds = demoShifts.map((x) => x.id);
+  const moves = await ds.getRepository(CashMovement).find({ where: { shiftId: In(shiftIds) } });
+  const refunds = await ds.getRepository(Refund).find({ where: { shiftId: In(shiftIds) }, relations: ['payments'] });
+
+  for (const sh of demoShifts) {
+    const who = staffById.get(sh.userId);
+    log(new Date(sh.openedAt.getTime() - 60000), sh.storeId, who, 'auth.login', `Signed in at the till with employee number ${who?.employeeNumber ?? '—'}`, { type: 'user', id: sh.userId });
+    log(sh.openedAt, sh.storeId, who, 'shift.open', `Opened the till with a ${gbp(sh.openingFloat)} float`, { type: 'shift', id: sh.id });
+    if (sh.closedAt) {
+      const v = Number(sh.variance ?? 0);
+      log(sh.closedAt, sh.storeId, who, 'shift.close',
+        `Closed the till: counted ${gbp(sh.countedCash)}, expected ${gbp(sh.expectedCash)}${v === 0 ? ', no difference' : `, ${v > 0 ? 'over' : 'short'} by ${gbp(Math.abs(v))}`}${sh.closeNote ? ` (${sh.closeNote})` : ''}`,
+        { type: 'shift', id: sh.id }, { countedCash: Number(sh.countedCash), expectedCash: Number(sh.expectedCash), variance: v, note: sh.closeNote });
+    }
+  }
+  for (const m of moves) {
+    const what = m.type === 'no_sale' ? 'Opened the drawer (no sale)' : `${MOVE[m.type] ?? m.type} ${gbp(m.amount)}`;
+    log(m.createdAt, m.storeId, staffById.get(m.userId), `drawer.${m.type}`, `${what}: ${m.reason}`, { type: 'cash_movement', id: m.id }, { amount: Number(m.amount), reason: m.reason });
+  }
+  for (const r of refunds) {
+    const methods = (r.payments ?? []).map((p) => `${p.method} ${gbp(p.amount)}`).join(', ');
+    log(r.createdAt, r.storeId, r.processedById ? staffById.get(r.processedById) : undefined, 'refund',
+      `Refund ${r.refundNumber} of ${gbp(r.total)} on receipt ${r.originalReceiptNumber}${methods ? ` (${methods})` : ''}`,
+      { type: 'refund', id: r.id }, { refundNumber: r.refundNumber, receiptNumber: r.originalReceiptNumber, total: Number(r.total), reason: r.reason });
+  }
+
+  for (const store of stores) {
+    const staff = [...staffById.values()].filter((u) => u.restaurantId === store.id);
+    const manager = staff.find((u) => u.role === UserRole.MANAGER);
+    const cashiers = staff.filter((u) => u.role === UserRole.CASHIER);
+    const storeShifts = demoShifts.filter((x) => x.storeId === store.id);
+    if (!manager || !storeShifts.length) continue;
+    const during = (sh: Shift, mins: number) => new Date(sh.openedAt.getTime() + mins * 60000);
+
+    // Mistakes at the till: a wrong manager PIN (typed by the manager on the cashier's till), a mistyped till PIN.
+    for (const sh of [pick(storeShifts), pick(storeShifts)]) log(during(sh, int(40, 200)), store.id, staffById.get(sh.userId), 'auth.manager_pin_failed', 'Wrong manager PIN entered', { type: 'user', id: sh.userId });
+    const c = pick(cashiers) ?? manager;
+    const sh = pick(storeShifts);
+    log(new Date(sh.openedAt.getTime() - 120000), store.id, c, 'auth.login_failed', `Wrong till PIN for employee number ${c.employeeNumber ?? '—'}`, { type: 'user', id: c.id });
+
+    // Manager's back-office work: deliveries booked in, a price change, the offers set up.
+    const receipts = await ledger.find({ where: { storeId: store.id, type: StockMovementType.GOODS_RECEIPT, reference: Like('DEMO-%') } });
+    const byRef = new Map<string, StockMovement[]>();
+    receipts.forEach((m) => byRef.set(m.reference!, [...(byRef.get(m.reference!) ?? []), m]));
+    for (const [ref, ms] of byRef) {
+      log(ms[0].createdAt, store.id, manager, 'stock.receive', `Booked in delivery ${ref}${ms[0].supplier ? ` from ${ms[0].supplier}` : ''}: ${ms.length} products, ${round3(ms.reduce((a, m) => a + Number(m.quantity), 0))} units`, { type: 'stock', id: ref });
+    }
+    const ps = await products.find({ where: { storeId: store.id, isActive: true }, order: { name: 'ASC' } });
+    for (const p of [ps[int(0, ps.length - 1)], ps[int(0, ps.length - 1)]]) {
+      const was = round2(Number(p.price) + pick([0.1, 0.2, 0.25]));
+      const at = new Date(Date.now() - int(4, 8) * day); at.setHours(int(8, 10), int(0, 59));
+      log(at, store.id, manager, 'product.price', `${p.name}: price ${was} → ${Number(p.price)}`, { type: 'product', id: p.id }, { changes: [{ field: 'price', from: was, to: Number(p.price) }] });
+    }
+    const offers = await ds.getRepository(Promotion).find({ where: { storeId: store.id } });
+    for (const o of offers) {
+      const at = new Date(Date.now() - int(9, 12) * day); at.setHours(int(9, 11), int(0, 59));
+      const deal = o.type === 'percent_off' ? `${Number(o.percentOff)}% off` : o.type === 'multibuy' ? `${o.buyQty} for ${gbp(o.bundlePrice)}` : `Buy ${o.buyQty} get ${o.freeQty} free`;
+      log(at, store.id, manager, 'promotion.create', `Created offer "${o.name}" (${deal})`, { type: 'promotion', id: o.id });
+    }
+  }
+  await audit.save(logs.map((l) => audit.create(l as any) as unknown as AuditLog));
+  console.log(`Audit log: ${logs.length} entries`);
 
   await ds.destroy();
 }

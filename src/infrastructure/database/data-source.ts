@@ -2,7 +2,7 @@ import { databaseSsl } from '../config/database-ssl';
 import { DataSource } from 'typeorm';
 import * as dotenv from 'dotenv';
 import {
-    Tenant, User, Restaurant, Product, ProductBarcode, Supplier, PurchaseOrder, PurchaseOrderLine, Sale, SaleItem, SalePayment, Shift, CashMovement, StockMovement, CardCharge, TimeEntry, Promotion, Customer, Refund, RefundItem, RefundPayment,
+    Tenant, User, Restaurant, Product, ProductBarcode, Supplier, PurchaseOrder, PurchaseOrderLine, Sale, SaleItem, SalePayment, Shift, CashMovement, StockMovement, CardCharge, TimeEntry, Promotion, Customer, Refund, RefundItem, RefundPayment, AuditLog,
 } from './entities';
 import { MIGRATIONS } from './migrations';
 
@@ -18,7 +18,7 @@ export const AppDataSource = new DataSource({
     synchronize: false,
     logging: process.env.NODE_ENV === 'development',
     entities: [
-        Tenant, User, Restaurant, Product, ProductBarcode, Supplier, PurchaseOrder, PurchaseOrderLine, Sale, SaleItem, SalePayment, Shift, CashMovement, StockMovement, CardCharge, TimeEntry, Promotion, Customer, Refund, RefundItem, RefundPayment,
+        Tenant, User, Restaurant, Product, ProductBarcode, Supplier, PurchaseOrder, PurchaseOrderLine, Sale, SaleItem, SalePayment, Shift, CashMovement, StockMovement, CardCharge, TimeEntry, Promotion, Customer, Refund, RefundItem, RefundPayment, AuditLog,
     ],
     migrations: MIGRATIONS,
     ssl: databaseSsl({ NODE_ENV: process.env.NODE_ENV, DATABASE_SSL: process.env.DATABASE_SSL }),

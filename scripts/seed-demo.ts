@@ -57,10 +57,25 @@ async function main() {
     }
     first.push(store);
 
-    const have = new Set((await products.find({ where: { storeId: store.id }, select: ['barcode'] })).map((p) => p.barcode));
-    const rows = buildSeedRows(store.id).filter((r) => !have.has(r.barcode));
+    const existing = await products.find({ where: { storeId: store.id }, select: ['id', 'barcode', 'name'] });
+    const have = new Map(existing.map((p) => [p.barcode, p]));
+    const seedRows = buildSeedRows(store.id);
+    const rows = seedRows.filter((r) => !have.has(r.barcode));
     if (rows.length) await products.save(rows.map((r) => ({ ...r } as any)));
     console.log(`  ${s.name}: ${rows.length} products added`);
+
+    // Demo products renamed in the catalogue (e.g. the second "Toothpaste 100ml" is now "Whitening Toothpaste 75ml"):
+    // rename them here too, with their past sale and refund lines, so no two demo products share a name.
+    let renamed = 0;
+    for (const r of seedRows) {
+      const p = have.get(r.barcode);
+      if (!p || p.name === r.name) continue;
+      await products.update({ id: p.id }, { name: r.name });
+      await ds.query(`UPDATE sale_items SET name = $1 WHERE "productId" = $2 AND name = $3`, [r.name, p.id, p.name]);
+      await ds.query(`UPDATE refund_items SET name = $1 WHERE "productId" = $2 AND name = $3`, [r.name, p.id, p.name]);
+      renamed++;
+    }
+    if (renamed) console.log(`  ${s.name}: ${renamed} products renamed`);
 
     await addUser(`manager.${s.code}@freshmarket.test`, `Manager ${s.city}`, UserRole.MANAGER, store.id);
     await addUser(`cashier1.${s.code}@freshmarket.test`, `Cashier 1 ${s.city}`, UserRole.CASHIER, store.id);
