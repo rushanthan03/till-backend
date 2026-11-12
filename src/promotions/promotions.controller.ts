@@ -9,6 +9,7 @@ import { CurrentUser } from '../infrastructure/auth/decorators/current-user.deco
 import { resolveStoreId } from '../infrastructure/auth/store-scope';
 import { UserRole } from '../infrastructure/database/entities';
 import { PromotionsService } from './promotions.service';
+import { describeDeal, offerChanges } from './promotion-calculations';
 import { CreatePromotionDto, ListPromotionsQueryDto, UpdatePromotionDto } from './dto/promotion.dto';
 
 const ALL = [UserRole.SUPER_ADMIN, UserRole.TENANT_ADMIN, UserRole.MANAGER, UserRole.CASHIER];
@@ -38,21 +39,23 @@ export class PromotionsController {
   async create(@Body() dto: CreatePromotionDto, @Query('storeId') storeId: string, @CurrentUser() user: any) {
     const sid = resolveStoreId(storeId, user);
     const p = await this.promotions.create(sid, dto);
-    await this.audit.record({ actor: user, storeId: sid, action: 'promotion.create', entityType: 'promotion', entityId: p.id, summary: `Created offer "${p.name}"`, details: { ...dto } });
+    await this.audit.record({ actor: user, storeId: sid, action: 'promotion.create', entityType: 'promotion', entityId: p.id, summary: `Created offer "${p.name}" (${describeDeal(p)})`, details: { ...dto } });
     return p;
   }
 
   @Patch(':id')
   @Roles(...MANAGERS)
   @NeedsPermission('promotions')
-  @ApiOperation({ summary: 'Edit a promotion, or switch it on/off with isActive' })
+  @ApiOperation({ summary: 'Edit any part of a promotion (deal, product or department, dates, name), or switch it on/off with isActive' })
   @ApiQuery({ name: 'storeId', required: false })
   async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePromotionDto, @Query('storeId') storeId: string, @CurrentUser() user: any) {
     const sid = resolveStoreId(storeId, user);
-    const p = await this.promotions.update(id, sid, dto);
-    const keys = Object.keys(dto);
-    const what = keys.length === 1 && keys[0] === 'isActive' ? (dto.isActive ? 'Switched on' : 'Switched off') : 'Changed';
-    await this.audit.record({ actor: user, storeId: sid, action: 'promotion.update', entityType: 'promotion', entityId: id, summary: `${what} offer "${p.name}"`, details: { ...dto } });
+    const { promotion: p, before } = await this.promotions.update(id, sid, dto);
+    const changes = offerChanges(before, p);
+    if (changes.length) {
+      const what = changes.length === 1 && changes[0].startsWith('switched') ? `${changes[0][0].toUpperCase()}${changes[0].slice(1)} offer "${p.name}"` : `Changed offer "${p.name}": ${changes.join('; ')}`;
+      await this.audit.record({ actor: user, storeId: sid, action: 'promotion.update', entityType: 'promotion', entityId: id, summary: what.slice(0, 500), details: { before, after: p } });
+    }
     return p;
   }
 }

@@ -17,8 +17,11 @@ export class CreatePromotionDto {
   @ApiPropertyOptional({ description: 'Required for percent_off', example: 20 })
   @ValidateIf((o) => o.type === PromotionType.PERCENT_OFF) @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(1) @Max(100) percentOff?: number;
 
-  @ApiPropertyOptional({ description: 'Required for multibuy: how many to buy', example: 3 })
-  @ValidateIf((o) => o.type === PromotionType.MULTIBUY) @Type(() => Number) @IsInt() @Min(2) @Max(100) buyQty?: number;
+  @ApiPropertyOptional({ description: 'Multibuy: how many make the bundle (2+). Buy-get-free: how many the customer pays for (1+)', example: 3 })
+  @ValidateIf((o) => o.type === PromotionType.MULTIBUY || o.type === PromotionType.BUY_GET_FREE) @Type(() => Number) @IsInt() @Min(1) @Max(100) buyQty?: number;
+
+  @ApiPropertyOptional({ description: 'Required for buy_get_free: how many more are free', example: 1 })
+  @ValidateIf((o) => o.type === PromotionType.BUY_GET_FREE) @Type(() => Number) @IsInt() @Min(1) @Max(100) freeQty?: number;
 
   @ApiPropertyOptional({ description: 'Required for multibuy: price for the bundle, VAT included', example: 5 })
   @ValidateIf((o) => o.type === PromotionType.MULTIBUY) @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) bundlePrice?: number;

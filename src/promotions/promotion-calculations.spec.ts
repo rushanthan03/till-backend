@@ -27,4 +27,16 @@ describe('promotion calculations', () => {
     expect(bestPromotion(rules, { id: 'p1', department: 'Bakery' }, 2, 1)?.rule.id).toBe('a');
     expect(bestPromotion(rules, { id: 'p9', department: 'Bakery' }, 2, 1)).toBeNull();
   });
+  it('buy X get Y free gives Y free in every full group', () => {
+    const r = rule({ type: 'buy_get_free', buyQty: 2, freeQty: 1 });
+    expect(ruleDiscount(r, 1.5, 2)).toBe(0); // not a full group yet
+    expect(ruleDiscount(r, 1.5, 3)).toBe(1.5); // 3 for the price of 2
+    expect(ruleDiscount(r, 1.5, 5)).toBe(1.5);
+    expect(ruleDiscount(r, 1.5, 6)).toBe(3);
+    expect(ruleDiscount(rule({ type: 'buy_get_free', buyQty: 1, freeQty: 1 }), 0.99, 4)).toBe(1.98); // BOGOF
+  });
+  it('does not apply buy-get-free to weighed quantities or incomplete rules', () => {
+    expect(ruleDiscount(rule({ type: 'buy_get_free', buyQty: 1, freeQty: 1 }), 2, 2.5)).toBe(0);
+    expect(ruleDiscount(rule({ type: 'buy_get_free', buyQty: 2, freeQty: null }), 2, 3)).toBe(0);
+  });
 });
